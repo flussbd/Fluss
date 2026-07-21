@@ -150,6 +150,8 @@ function renderActionsBar() {
   if (order.status === 'reviewing') {
     bar.appendChild(makeButton('Exportar a WhatsApp', 'btn-secondary', exportWhatsApp));
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
+    bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', downloadOrderTxt));
+    bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', downloadOrderCsv));
     bar.appendChild(makeButton('Cerrar quincena y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
@@ -294,6 +296,61 @@ function exportWhatsApp() {
   lines.push('Gracias.');
   const message = lines.join('\n');
   window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+}
+
+// ---------------------------------------------------------------------------
+// Descargar pedido consolidado (TXT / CSV)
+// ---------------------------------------------------------------------------
+function downloadTextFile(filename, content, mime) {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadOrderTxt() {
+  const groups = consolidateByProduct(items, products, categories, adjustments);
+  const lines = [`Pedido quincenal — ${formatPeriod(order)}`, ''];
+  for (const group of groups) {
+    lines.push(group.category.name.toUpperCase());
+    for (const item of group.items) {
+      const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
+      const suffix = notes.length ? ` (${notes.join('; ')})` : '';
+      lines.push(`- ${item.product.name}: ${item.totalQuantity} ${item.product.defaultUnit}${suffix}`);
+    }
+    lines.push('');
+  }
+  downloadTextFile(`pedido-${order.periodStart}-a-${order.periodEnd}.txt`, lines.join('\n'), 'text/plain');
+}
+
+function csvEscape(value) {
+  const str = String(value ?? '');
+  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function downloadOrderCsv() {
+  const groups = consolidateByProduct(items, products, categories, adjustments);
+  const rows = [['Categoria', 'Producto', 'Unidad', 'Cantidad', 'Proveedor']];
+  for (const group of groups) {
+    for (const item of group.items) {
+      rows.push([
+        group.category.name,
+        item.product.name,
+        item.product.defaultUnit,
+        item.totalQuantity,
+        item.product.supplierName || '',
+      ]);
+    }
+  }
+  const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
+  // El BOM al inicio ayuda a que Excel detecte UTF-8 y muestre bien tildes/ñ.
+  downloadTextFile(`pedido-${order.periodStart}-a-${order.periodEnd}.csv`, '\uFEFF' + csv, 'text/csv');
 }
 
 // ---------------------------------------------------------------------------

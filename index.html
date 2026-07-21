@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Fluss — Ingresar</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-card">
+      <div class="login-logo">F</div>
+      <h1>Fluss</h1>
+      <p class="login-tagline">Gestión de insumos para salones</p>
+
+      <div id="alertBox" class="alert alert-error hidden"></div>
+
+      <button id="googleBtn" class="btn btn-secondary btn-lg">
+        Continuar con Google
+      </button>
+
+      <div class="divider">o con email</div>
+
+      <form id="emailForm">
+        <div class="field">
+          <label for="email">Email</label>
+          <input class="input" type="email" id="email" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <input class="input" type="password" id="password" required autocomplete="current-password" minlength="6" />
+        </div>
+        <button type="submit" id="submitBtn" class="btn btn-primary btn-lg">Ingresar</button>
+      </form>
+
+      <button id="toggleModeBtn" class="link-toggle">¿Primera vez? Crear cuenta con email</button>
+
+      <p class="text-sm text-muted mt-4" id="hint">
+        Para ingresar necesitás que un administrador te haya invitado antes con tu email.
+      </p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { auth, loginWithGoogle, loginWithEmail, signUpWithEmail, resolveProfile, homeForRole } from './js/auth.js';
+
+    const alertBox = document.getElementById('alertBox');
+    const googleBtn = document.getElementById('googleBtn');
+    const emailForm = document.getElementById('emailForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const toggleModeBtn = document.getElementById('toggleModeBtn');
+    let mode = 'login'; // 'login' | 'signup'
+
+    function showError(message) {
+      alertBox.textContent = message;
+      alertBox.classList.remove('hidden');
+    }
+
+    function clearError() {
+      alertBox.classList.add('hidden');
+    }
+
+    toggleModeBtn.addEventListener('click', () => {
+      mode = mode === 'login' ? 'signup' : 'login';
+      submitBtn.textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
+      toggleModeBtn.textContent =
+        mode === 'login' ? '¿Primera vez? Crear cuenta con email' : '¿Ya tenés cuenta? Ingresar';
+      clearError();
+    });
+
+    async function afterLogin(user) {
+      const profile = await resolveProfile(user);
+      if (!profile) {
+        window.location.href = 'pending.html';
+        return;
+      }
+      if (profile.pendingEmailVerification) {
+        window.location.href = 'pending.html?verify=1';
+        return;
+      }
+      window.location.href = homeForRole(profile.role);
+    }
+
+    googleBtn.addEventListener('click', async () => {
+      clearError();
+      try {
+        const cred = await loginWithGoogle();
+        await afterLogin(cred.user);
+      } catch (err) {
+        showError('No se pudo iniciar sesión con Google. Intentá de nuevo.');
+        console.error(err);
+      }
+    });
+
+    emailForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      try {
+        const cred = mode === 'login' ? await loginWithEmail(email, password) : await signUpWithEmail(email, password);
+        if (mode === 'signup') {
+          window.location.href = 'pending.html?verify=1';
+          return;
+        }
+        await afterLogin(cred.user);
+      } catch (err) {
+        showError('No se pudo completar el pedido. Revisá el email/contraseña e intentá de nuevo.');
+        console.error(err);
+      }
+    });
+
+    // Si ya hay sesión activa (ej. volvieron a abrir la app), redirigir directo.
+    onAuthStateChanged(auth, (user) => {
+      if (user) afterLogin(user);
+    });
+  </script>
+</body>
+</html>

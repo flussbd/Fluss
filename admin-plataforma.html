@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fluss — Plataforma</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header-inner">
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          Fluss · Plataforma
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost btn-sm">Salir</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="card">
+        <h2>Crear salón</h2>
+        <form id="salonForm" class="flex gap-2 mt-4">
+          <input class="input" id="salonNameInput" placeholder="Nombre del salón" required />
+          <button class="btn btn-primary" type="submit">Crear</button>
+        </form>
+      </div>
+
+      <div class="stat-row mt-4" id="platformStats"></div>
+
+      <h2 class="category-title">Salones</h2>
+      <div id="salonList"></div>
+    </main>
+  </div>
+
+  <div id="inviteModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2>Invitar administrador local</h2>
+      <p id="inviteModalSalon"></p>
+      <div class="field">
+        <label>Email</label>
+        <input class="input" type="email" id="inviteAdminEmail" required />
+      </div>
+      <div class="modal-actions">
+        <button id="inviteCancelBtn" class="btn btn-secondary">Cancelar</button>
+        <button id="inviteConfirmBtn" class="btn btn-primary">Invitar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/admin-plataforma.js"></script>
+</body>
+</html>

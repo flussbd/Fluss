@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fluss — Administrador</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header no-print">
+      <div class="app-header-inner">
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          Fluss · <span id="salonName">Admin</span>
+        </div>
+        <nav class="nav-links">
+          <button class="nav-link active" data-panel="dashboard">Pedido actual</button>
+          <button class="nav-link" data-panel="catalog">Catálogo</button>
+          <button class="nav-link" data-panel="team">Equipo</button>
+          <button class="nav-link" data-panel="history">Historial</button>
+        </nav>
+        <button id="logoutBtn" class="btn btn-ghost btn-sm">Salir</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- ================= PANEL: Pedido actual ================= -->
+      <section id="panel-dashboard" class="panel">
+        <div id="noOrderCard" class="card hidden">
+          <h2>No hay un pedido quincenal abierto</h2>
+          <p class="text-muted text-sm mt-4">Definí las fechas de esta quincena para que el equipo pueda empezar a pedir.</p>
+          <button id="openOrderBtn" class="btn btn-primary mt-4">Definir fechas y abrir pedido</button>
+        </div>
+
+        <div id="orderCard" class="card hidden">
+          <div class="flex items-center justify-between" style="flex-wrap: wrap; gap: 12px;">
+            <div>
+              <p class="text-sm text-muted">Quincena actual</p>
+              <h1 id="periodLabel" style="font-size: 24px;"></h1>
+            </div>
+            <span id="statusBadge" class="badge"></span>
+          </div>
+          <div class="stat-row">
+            <span class="stat" id="statProducts"></span>
+            <span class="stat" id="statUnits"></span>
+            <span class="stat" id="statUsers"></span>
+          </div>
+        </div>
+
+        <div id="actionsBar" class="flex gap-2 mt-4 no-print" style="flex-wrap: wrap;"></div>
+
+        <p id="draftHint" class="text-sm text-muted mt-4 hidden">
+          El equipo todavía puede agregar insumos. Cerrá el período de solicitud cuando estén listos para revisar y
+          ajustar cantidades.
+        </p>
+
+        <div id="consolidatedSection" class="mt-4 hidden">
+          <div class="view-switch no-print">
+            <button id="viewConsolidatedBtn" class="active">Consolidado</button>
+            <button id="viewByUserBtn">Por usuario</button>
+          </div>
+
+          <div id="byProductView" class="mt-4"></div>
+          <div id="byUserView" class="mt-4 hidden"></div>
+        </div>
+      </section>
+
+      <!-- ================= PANEL: Catálogo ================= -->
+      <section id="panel-catalog" class="panel hidden">
+        <div class="card">
+          <h2>Nueva categoría</h2>
+          <form id="categoryForm" class="mt-4" style="display:flex; gap:8px;">
+            <input class="input" id="categoryName" placeholder="Ej: Tinturas" required />
+            <button class="btn btn-secondary" type="submit">Agregar</button>
+          </form>
+        </div>
+
+        <div class="card mt-4">
+          <h2>Nuevo producto</h2>
+          <form id="productForm" class="mt-4">
+            <div class="field">
+              <label>Nombre</label>
+              <input class="input" id="productName" required />
+            </div>
+            <div class="field">
+              <label>Categoría</label>
+              <select class="input" id="productCategory" required></select>
+            </div>
+            <div class="field">
+              <label>Unidad</label>
+              <input class="input" id="productUnit" placeholder="unidad, litro, caja..." value="unidad" />
+            </div>
+            <div class="field">
+              <label>Proveedor (opcional)</label>
+              <input class="input" id="productSupplier" />
+            </div>
+            <button class="btn btn-secondary" type="submit">Agregar producto</button>
+          </form>
+        </div>
+
+        <h2 class="category-title">Productos activos</h2>
+        <div id="productList"></div>
+      </section>
+
+      <!-- ================= PANEL: Equipo ================= -->
+      <section id="panel-team" class="panel hidden">
+        <div class="card">
+          <h2>Invitar usuario básico</h2>
+          <p class="text-muted text-sm mt-4">
+            Se crea una invitación por email. La persona la reclama sola la primera vez que inicia sesión en Fluss
+            (con Google o creando una cuenta con ese mismo email).
+          </p>
+          <form id="inviteForm" class="flex gap-2 mt-4">
+            <input class="input" id="inviteEmail" type="email" placeholder="email@ejemplo.com" required />
+            <button class="btn btn-secondary" type="submit">Invitar</button>
+          </form>
+        </div>
+
+        <h2 class="category-title">Invitaciones pendientes</h2>
+        <div id="inviteList"></div>
+
+        <h2 class="category-title">Equipo</h2>
+        <div id="userList"></div>
+      </section>
+
+      <!-- ================= PANEL: Historial ================= -->
+      <section id="panel-history" class="panel hidden">
+        <h2 class="category-title" style="margin-top:0;">Quincenas archivadas</h2>
+        <div id="historyList"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: definir fechas del pedido -->
+  <div id="periodModal" class="modal-overlay no-print" hidden>
+    <div class="modal">
+      <h2>Fechas de la quincena</h2>
+      <p>Definí el rango de fechas para este pedido.</p>
+      <div class="field">
+        <label>Desde</label>
+        <input class="input" type="date" id="periodStartInput" required />
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <input class="input" type="date" id="periodEndInput" required />
+      </div>
+      <div class="modal-actions">
+        <button id="periodCancelBtn" class="btn btn-secondary">Cancelar</button>
+        <button id="periodConfirmBtn" class="btn btn-primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <template id="consolidatedRowTemplate">
+    <div class="consolidated-row">
+      <div class="consolidated-row-head">
+        <div>
+          <p class="product-name"></p>
+          <p class="product-meta"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input class="input qty-input" type="number" min="0" />
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="consolidated-row-detail"></div>
+    </div>
+  </template>
+
+  <script type="module" src="js/admin-local.js"></script>
+</body>
+</html>

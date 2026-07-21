@@ -1,0 +1,465 @@
+import { requireRole, logout } from './auth.js';
+import {
+  listenCategories,
+  listenProducts,
+  listenCurrentOrder,
+  listenOrderItems,
+  listenAdjustments,
+  listenCompletedOrders,
+  listenUsersOfSalon,
+  listenInvitesOfSalon,
+  createOrder,
+  startReview,
+  closeOrder,
+  setAdjustment,
+  addCategory,
+  addProduct,
+  deactivateProduct,
+  createInvite,
+  consolidateByProduct,
+  consolidateByUser,
+} from './db.js';
+import { doc, getDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db } from './firebase-init.js';
+
+const STATUS_LABEL = {
+  draft: 'Abierto para agregar',
+  reviewing: 'En revisión por administración',
+  completed: 'Pedido enviado a proveedor',
+};
+
+let user, profile;
+let categories = [];
+let products = [];
+let order = null;
+let items = [];
+let adjustments = [];
+let consolidatedView = 'byProduct'; // 'byProduct' | 'byUser'
+let unsubItems = null;
+let unsubAdjustments = null;
+
+init();
+
+async function init() {
+  const auth = await requireRole(['local_admin']);
+  user = auth.user;
+  profile = auth.profile;
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await logout();
+    window.location.href = 'index.html';
+  });
+
+  setupNav();
+  setupPeriodModal();
+  setupCatalogForms();
+  setupInviteForm();
+
+  const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
+  if (salonSnap.exists()) document.getElementById('salonName').textContent = salonSnap.data().name;
+
+  listenCategories(profile.salonId, (cats) => {
+    categories = cats;
+    renderCategoryOptions();
+    renderDashboard();
+  });
+
+  listenProducts(profile.salonId, (prods) => {
+    products = prods;
+    renderProductList();
+    renderDashboard();
+  });
+
+  listenCurrentOrder(profile.salonId, (currentOrder) => {
+    order = currentOrder;
+    if (unsubItems) unsubItems();
+    if (unsubAdjustments) unsubAdjustments();
+    items = [];
+    adjustments = [];
+    if (order) {
+      unsubItems = listenOrderItems(profile.salonId, order.id, (its) => {
+        items = its;
+        renderDashboard();
+      });
+      unsubAdjustments = listenAdjustments(profile.salonId, order.id, (adjs) => {
+        adjustments = adjs;
+        renderDashboard();
+      });
+    }
+    renderDashboard();
+  });
+
+  listenCompletedOrders(profile.salonId, renderHistory);
+  listenUsersOfSalon(profile.salonId, renderUserList);
+  listenInvitesOfSalon(profile.salonId, renderInviteList);
+}
+
+// ---------------------------------------------------------------------------
+// Navegación entre paneles
+// ---------------------------------------------------------------------------
+function setupNav() {
+  document.querySelectorAll('.nav-link').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-link').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.panel').forEach((p) => p.classList.add('hidden'));
+      document.getElementById(`panel-${btn.dataset.panel}`).classList.remove('hidden');
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard: pedido actual, consolidado / por usuario
+// ---------------------------------------------------------------------------
+function renderDashboard() {
+  document.getElementById('noOrderCard').classList.toggle('hidden', !!order);
+  document.getElementById('orderCard').classList.toggle('hidden', !order);
+  document.getElementById('consolidatedSection').classList.toggle('hidden', !order);
+  document.getElementById('draftHint').classList.toggle('hidden', !order || order.status !== 'draft');
+
+  renderActionsBar();
+
+  if (!order) return;
+
+  document.getElementById('periodLabel').textContent = formatPeriod(order);
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = STATUS_LABEL[order.status];
+  badge.className = `badge badge-${order.status}`;
+
+  const groups = consolidateByProduct(items, products, categories, adjustments);
+  const totalProducts = groups.reduce((s, g) => s + g.items.length, 0);
+  const totalUnits = groups.reduce((s, g) => s + g.items.reduce((s2, i) => s2 + i.totalQuantity, 0), 0);
+  const totalUsers = new Set(items.map((i) => i.userId)).size;
+  document.getElementById('statProducts').textContent = `${totalProducts} productos`;
+  document.getElementById('statUnits').textContent = `${totalUnits} unidades totales`;
+  document.getElementById('statUsers').textContent = `${totalUsers} personas participaron`;
+
+  renderByProductView(groups);
+  renderByUserView(consolidateByUser(items, products));
+}
+
+function renderActionsBar() {
+  const bar = document.getElementById('actionsBar');
+  bar.innerHTML = '';
+  if (!order) return;
+
+  if (order.status === 'draft') {
+    bar.appendChild(makeButton('Cerrar período de solicitud', 'btn-secondary', () => startReview(profile.salonId, order.id)));
+  }
+
+  if (order.status === 'reviewing') {
+    bar.appendChild(makeButton('Exportar a WhatsApp', 'btn-secondary', exportWhatsApp));
+    bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
+    bar.appendChild(makeButton('Cerrar quincena y enviar', 'btn-accent', handleCloseFortnight));
+  }
+}
+
+function makeButton(label, cls, onClick) {
+  const btn = document.createElement('button');
+  btn.className = `btn ${cls}`;
+  btn.textContent = label;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+document.getElementById('viewConsolidatedBtn').addEventListener('click', () => switchConsolidatedView('byProduct'));
+document.getElementById('viewByUserBtn').addEventListener('click', () => switchConsolidatedView('byUser'));
+
+function switchConsolidatedView(view) {
+  consolidatedView = view;
+  document.getElementById('viewConsolidatedBtn').classList.toggle('active', view === 'byProduct');
+  document.getElementById('viewByUserBtn').classList.toggle('active', view === 'byUser');
+  document.getElementById('byProductView').classList.toggle('hidden', view !== 'byProduct');
+  document.getElementById('byUserView').classList.toggle('hidden', view !== 'byUser');
+}
+
+function renderByProductView(groups) {
+  const container = document.getElementById('byProductView');
+  container.innerHTML = '';
+  if (groups.length === 0) {
+    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a esta quincena.</div>';
+    return;
+  }
+  const editable = order.status === 'draft' || order.status === 'reviewing';
+  const template = document.getElementById('consolidatedRowTemplate');
+
+  for (const group of groups) {
+    const title = document.createElement('h2');
+    title.className = 'category-title';
+    title.textContent = group.category.name;
+    container.appendChild(title);
+
+    for (const item of group.items) {
+      const row = template.content.firstElementChild.cloneNode(true);
+      row.querySelector('.product-name').textContent = item.product.name;
+      row.querySelector('.product-meta').textContent = `${item.breakdown.length} persona(s) · ${item.product.defaultUnit}`;
+
+      const qtyInput = row.querySelector('.qty-input');
+      qtyInput.value = item.totalQuantity;
+      qtyInput.disabled = !editable;
+      qtyInput.addEventListener('click', (e) => e.stopPropagation());
+      qtyInput.addEventListener('change', () => {
+        const value = Math.max(0, Number(qtyInput.value) || 0);
+        setAdjustment(profile.salonId, order.id, item.product.id, value, user.uid).catch(console.error);
+      });
+
+      const detail = row.querySelector('.consolidated-row-detail');
+      for (const b of item.breakdown) {
+        const line = document.createElement('div');
+        const noteSuffix = b.notes ? ` — ${b.notes}` : '';
+        line.innerHTML = `<span>${escapeHtml(b.userName)}${escapeHtml(noteSuffix)}</span><span>${b.quantity}</span>`;
+        detail.appendChild(line);
+      }
+
+      row.querySelector('.consolidated-row-head').addEventListener('click', () => row.classList.toggle('expanded'));
+      container.appendChild(row);
+    }
+  }
+}
+
+function renderByUserView(userGroups) {
+  const container = document.getElementById('byUserView');
+  container.innerHTML = '';
+  if (userGroups.length === 0) {
+    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a esta quincena.</div>';
+    return;
+  }
+  for (const group of userGroups) {
+    const wrap = document.createElement('div');
+    wrap.className = 'user-group';
+    const h3 = document.createElement('h3');
+    h3.textContent = group.userName;
+    wrap.appendChild(h3);
+    const ul = document.createElement('ul');
+    for (const it of group.items) {
+      const li = document.createElement('li');
+      const noteSuffix = it.notes ? ` — ${it.notes}` : '';
+      li.innerHTML = `<span>${escapeHtml(it.product.name)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} ${escapeHtml(it.product.defaultUnit)}</span>`;
+      ul.appendChild(li);
+    }
+    wrap.appendChild(ul);
+    container.appendChild(wrap);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Modal: definir fechas y abrir pedido
+// ---------------------------------------------------------------------------
+function setupPeriodModal() {
+  const modal = document.getElementById('periodModal');
+  document.getElementById('openOrderBtn').addEventListener('click', () => {
+    modal.hidden = false;
+  });
+  document.getElementById('periodCancelBtn').addEventListener('click', () => {
+    modal.hidden = true;
+  });
+  document.getElementById('periodConfirmBtn').addEventListener('click', async () => {
+    const start = document.getElementById('periodStartInput').value;
+    const end = document.getElementById('periodEndInput').value;
+    if (!start || !end) {
+      alert('Completá las dos fechas.');
+      return;
+    }
+    if (end < start) {
+      alert('La fecha "Hasta" no puede ser anterior a "Desde".');
+      return;
+    }
+    await createOrder(profile.salonId, start, end);
+    modal.hidden = true;
+  });
+}
+
+async function handleCloseFortnight() {
+  if (!confirm('¿Cerrar esta quincena y archivarla? Esta acción no se puede deshacer.')) return;
+  await closeOrder(profile.salonId, order.id, user.uid);
+  // El admin define las fechas del próximo pedido explícitamente desde
+  // "No hay un pedido quincenal abierto" → no se abre uno automático.
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp
+// ---------------------------------------------------------------------------
+function exportWhatsApp() {
+  const groups = consolidateByProduct(items, products, categories, adjustments);
+  const lines = [`*Pedido quincenal — ${formatPeriod(order)}*`, ''];
+  for (const group of groups) {
+    lines.push(`*${group.category.name}*`);
+    for (const item of group.items) {
+      const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
+      const suffix = notes.length ? ` (${notes.join('; ')})` : '';
+      lines.push(`- ${item.product.name}: ${item.totalQuantity} ${item.product.defaultUnit}${suffix}`);
+    }
+    lines.push('');
+  }
+  lines.push('Gracias.');
+  const message = lines.join('\n');
+  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo
+// ---------------------------------------------------------------------------
+function setupCatalogForms() {
+  document.getElementById('categoryForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('categoryName');
+    const name = input.value.trim();
+    if (!name) return;
+    await addCategory(profile.salonId, name, categories.length);
+    input.value = '';
+  });
+
+  document.getElementById('productForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('productName').value.trim();
+    const categoryId = document.getElementById('productCategory').value;
+    const defaultUnit = document.getElementById('productUnit').value.trim();
+    const supplierName = document.getElementById('productSupplier').value.trim();
+    if (!name || !categoryId) return;
+    await addProduct(profile.salonId, { name, categoryId, defaultUnit, supplierName });
+    e.target.reset();
+    document.getElementById('productUnit').value = 'unidad';
+  });
+}
+
+function renderCategoryOptions() {
+  const select = document.getElementById('productCategory');
+  const current = select.value;
+  select.innerHTML = '<option value="" disabled selected>Elegí una categoría</option>';
+  for (const c of categories) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    select.appendChild(opt);
+  }
+  if (current) select.value = current;
+}
+
+function renderProductList() {
+  const container = document.getElementById('productList');
+  container.innerHTML = '';
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  if (products.length === 0) {
+    container.innerHTML = '<div class="empty-state">Todavía no cargaste productos.</div>';
+    return;
+  }
+  for (const p of products) {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <div>
+        <p class="list-row-title">${escapeHtml(p.name)}</p>
+        <p class="list-row-sub">${escapeHtml(categoryById.get(p.categoryId)?.name || '—')} · ${escapeHtml(p.defaultUnit)}${p.supplierName ? ' · ' + escapeHtml(p.supplierName) : ''}</p>
+      </div>
+    `;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-sm';
+    btn.textContent = 'Desactivar';
+    btn.addEventListener('click', async () => {
+      if (confirm(`¿Quitar "${p.name}" del catálogo?`)) await deactivateProduct(profile.salonId, p.id);
+    });
+    row.appendChild(btn);
+    container.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Equipo (invitaciones + usuarios)
+// ---------------------------------------------------------------------------
+function setupInviteForm() {
+  document.getElementById('inviteForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('inviteEmail');
+    const email = input.value.trim().toLowerCase();
+    if (!email) return;
+    await createInvite(email, 'basic', profile.salonId, user.uid);
+    input.value = '';
+  });
+}
+
+function renderInviteList(invites) {
+  const container = document.getElementById('inviteList');
+  container.innerHTML = '';
+  if (invites.length === 0) {
+    container.innerHTML = '<div class="empty-state">No hay invitaciones pendientes.</div>';
+    return;
+  }
+  for (const inv of invites) {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <div>
+        <p class="list-row-title">${escapeHtml(inv.id)}</p>
+        <p class="list-row-sub">Invitación pendiente</p>
+      </div>
+    `;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-sm';
+    btn.textContent = 'Cancelar';
+    btn.addEventListener('click', async () => {
+      if (confirm('¿Cancelar esta invitación?')) await deleteDoc(doc(db, 'invites', inv.id));
+    });
+    row.appendChild(btn);
+    container.appendChild(row);
+  }
+}
+
+function renderUserList(users) {
+  const container = document.getElementById('userList');
+  container.innerHTML = '';
+  if (users.length === 0) {
+    container.innerHTML = '<div class="empty-state">Todavía no hay nadie en el equipo.</div>';
+    return;
+  }
+  for (const u of users) {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <div>
+        <p class="list-row-title">${escapeHtml(u.name)}</p>
+        <p class="list-row-sub">${escapeHtml(u.email)}</p>
+      </div>
+      <span class="pill">${u.role === 'local_admin' ? 'Admin local' : 'Básico'}</span>
+    `;
+    container.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Historial
+// ---------------------------------------------------------------------------
+function renderHistory(orders) {
+  const container = document.getElementById('historyList');
+  container.innerHTML = '';
+  if (orders.length === 0) {
+    container.innerHTML = '<div class="empty-state">Todavía no hay quincenas archivadas.</div>';
+    return;
+  }
+  for (const o of orders) {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    const closedDate = o.closedAt?.toDate ? o.closedAt.toDate().toLocaleDateString('es') : '—';
+    row.innerHTML = `
+      <div>
+        <p class="list-row-title">${escapeHtml(formatPeriod(o))}</p>
+        <p class="list-row-sub">Cerrado el ${closedDate}</p>
+      </div>
+    `;
+    container.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Utilidades
+// ---------------------------------------------------------------------------
+function formatPeriod(o) {
+  if (!o.periodStart || !o.periodEnd) return '';
+  const opts = { day: 'numeric', month: 'short', year: 'numeric' };
+  const start = new Date(o.periodStart + 'T00:00:00').toLocaleDateString('es', opts);
+  const end = new Date(o.periodEnd + 'T00:00:00').toLocaleDateString('es', opts);
+  return `${start} — ${end}`;
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

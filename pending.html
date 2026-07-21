@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fluss — Cuenta pendiente</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-card">
+      <div class="login-logo">F</div>
+      <h1 id="title">Cuenta pendiente</h1>
+      <p class="text-muted mt-4" id="message">
+        Todavía no encontramos una invitación para tu email. Pedile a tu administrador que te invite a Fluss y volvé
+        a intentar.
+      </p>
+      <button id="retryBtn" class="btn btn-primary btn-lg mt-4">Ya me invitaron, reintentar</button>
+      <button id="logoutBtn" class="btn btn-ghost mt-4">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, logout, resolveProfile, homeForRole } from './js/auth.js';
+    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('verify') === '1') {
+      document.getElementById('title').textContent = 'Confirmá tu email';
+      document.getElementById('message').textContent =
+        'Te enviamos un email de verificación. Abrilo, confirmá tu cuenta y después volvé a esta pantalla.';
+    }
+
+    document.getElementById('retryBtn').addEventListener('click', async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        window.location.href = 'index.html';
+        return;
+      }
+      await user.reload();
+      const profile = await resolveProfile(user);
+      if (profile && !profile.pendingEmailVerification) {
+        window.location.href = homeForRole(profile.role);
+      } else {
+        alert('Todavía no encontramos tu invitación o falta verificar el email.');
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await logout();
+      window.location.href = 'index.html';
+    });
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) window.location.href = 'index.html';
+    });
+  </script>
+</body>
+</html>

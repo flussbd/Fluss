@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Fluss — Mi pedido</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app-shell" style="padding-bottom: 72px;">
+    <header class="app-header">
+      <div class="app-header-inner">
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          Fluss
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost btn-sm">Salir</button>
+      </div>
+    </header>
+
+    <main class="main main-narrow">
+      <div class="flex items-center justify-between mt-4">
+        <div>
+          <p class="text-sm text-muted" id="periodLabel">Cargando…</p>
+        </div>
+        <span id="statusBadge" class="badge badge-draft">Cargando…</span>
+      </div>
+
+      <div id="closedAlert" class="alert alert-warning mt-4 hidden">
+        El período de solicitud está cerrado. Ya no se pueden agregar ni modificar insumos para este pedido.
+      </div>
+
+      <div id="noOrderAlert" class="alert alert-info mt-4 hidden">
+        Todavía no hay un pedido quincenal abierto. Esperá a que tu administrador lo abra.
+      </div>
+
+      <!-- Vista Catálogo -->
+      <div id="catalogView">
+        <div id="tabs" class="tabs mt-4"></div>
+        <div id="productGrid" class="product-grid"></div>
+        <div id="emptyProducts" class="empty-state hidden">Todavía no hay insumos cargados en el catálogo.</div>
+      </div>
+
+      <!-- Vista Mi pedido -->
+      <div id="myOrderView" class="hidden mt-4">
+        <h2 class="category-title" style="margin-top:0;">Mi pedido de la quincena</h2>
+        <div id="myOrderGrid" class="product-grid"></div>
+        <div id="emptyMyOrder" class="empty-state hidden">
+          Todavía no agregaste insumos. Andá al catálogo para empezar.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <button id="navCatalog" class="bottom-nav-btn active">Catálogo</button>
+      <button id="navMyOrder" class="bottom-nav-btn">
+        Mi pedido
+        <span id="myOrderBadge" class="bottom-nav-badge hidden">0</span>
+      </button>
+    </div>
+  </nav>
+
+  <template id="productCardTemplate">
+    <div class="product-card">
+      <div class="product-card-top">
+        <div>
+          <p class="product-name"></p>
+          <p class="product-meta"></p>
+        </div>
+        <div class="stepper">
+          <button class="stepper-btn minus">−</button>
+          <span class="stepper-value">0</span>
+          <button class="stepper-btn plus">+</button>
+        </div>
+      </div>
+      <button class="note-toggle">+ Agregar nota</button>
+      <input class="input note-input hidden" type="text" placeholder="Nota opcional (ej: Marca X urgente)" />
+    </div>
+  </template>
+
+  <script type="module" src="js/basic.js"></script>
+</body>
+</html>

@@ -320,6 +320,72 @@ function setupCatalogForms() {
     e.target.reset();
     document.getElementById('productUnit').value = 'unidad';
   });
+
+  document.getElementById('bulkImportBtn').addEventListener('click', async () => {
+    const textarea = document.getElementById('bulkImportInput');
+    const resultEl = document.getElementById('bulkImportResult');
+    const text = textarea.value;
+    if (!text.trim()) return;
+
+    const btn = document.getElementById('bulkImportBtn');
+    btn.disabled = true;
+    resultEl.textContent = 'Cargando…';
+
+    try {
+      const result = await bulkImportCatalog(text);
+      resultEl.textContent = `Listo: ${result.categories} categoría(s) nueva(s) y ${result.products} producto(s) agregados.`;
+      textarea.value = '';
+    } catch (err) {
+      console.error(err);
+      resultEl.textContent = 'Hubo un error, revisá la consola del navegador (F12) para más detalle.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/**
+ * Parsea un texto tipo:
+ *   # Categoría
+ *   Producto; unidad; proveedor
+ * y crea las categorías/productos que no existan todavía (compara nombres
+ * sin importar mayúsculas/minúsculas para no duplicar categorías).
+ */
+async function bulkImportCatalog(text) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const categoryIdByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+  let sortOrder = categories.length;
+  let currentCategoryId = null;
+  const created = { categories: 0, products: 0 };
+
+  for (const line of lines) {
+    if (line.startsWith('#')) {
+      const name = line.slice(1).trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (categoryIdByName.has(key)) {
+        currentCategoryId = categoryIdByName.get(key);
+      } else {
+        const ref = await addCategory(profile.salonId, name, sortOrder++);
+        currentCategoryId = ref.id;
+        categoryIdByName.set(key, ref.id);
+        created.categories++;
+      }
+    } else {
+      if (!currentCategoryId) continue; // producto listado antes de cualquier "# Categoría": se ignora
+      const [name, unit, supplier] = line.split(';').map((s) => (s ? s.trim() : ''));
+      if (!name) continue;
+      await addProduct(profile.salonId, {
+        name,
+        categoryId: currentCategoryId,
+        defaultUnit: unit || 'unidad',
+        supplierName: supplier || '',
+      });
+      created.products++;
+    }
+  }
+
+  return created;
 }
 
 function renderCategoryOptions() {

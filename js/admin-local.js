@@ -356,8 +356,8 @@ function downloadOrderXlsx(
     return;
   }
   const header = [
-    'Categoria',
     'Marca',
+    'Categoria',
     'Linea',
     'Producto',
     'Tono',
@@ -386,8 +386,8 @@ function downloadOrderXlsx(
       if (typeof cost === 'number') totalCosto += cost;
 
       rows.push([
-        group.category.name,
         item.product.brand || '',
+        group.category.name,
         item.product.line || '',
         item.product.name,
         item.product.shadeCode || '',

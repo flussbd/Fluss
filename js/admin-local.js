@@ -744,8 +744,17 @@ function renderUserList(users) {
         <p class="list-row-title">${escapeHtml(u.name)}</p>
         <p class="list-row-sub">${escapeHtml(u.email)}</p>
       </div>
-      <span class="pill">${u.role === 'local_admin' ? 'Admin local' : 'Básico'}</span>
     `;
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.alignItems = 'center';
+    actions.style.gap = '10px';
+
+    const pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.textContent = u.role === 'local_admin' ? 'Admin local' : 'Básico';
+    actions.appendChild(pill);
+
     const btn = document.createElement('button');
     btn.className = 'btn btn-ghost btn-sm';
     btn.textContent = 'Editar nombre';
@@ -756,7 +765,9 @@ function renderUserList(users) {
       if (!trimmed || trimmed === u.name) return;
       await updateUserName(u.id, trimmed);
     });
-    row.appendChild(btn);
+    actions.appendChild(btn);
+
+    row.appendChild(actions);
     container.appendChild(row);
   }
 }

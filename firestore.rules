@@ -17,51 +17,59 @@ rules_version = '2';
 // Alta de usuarios sin backend propio: se usa un patrón de "invitación"
 // (colección /invites/{email}) que el propio usuario reclama la primera vez
 // que inicia sesión (ver js/auth.js). No hay Cloud Functions ni Admin SDK.
-
-function isSignedIn() {
-  return request.auth != null;
-}
-
-function myEmail() {
-  return request.auth.token.email.lower();
-}
-
-function myProfile() {
-  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-}
-
-function myRole() {
-  return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-    ? myProfile().role
-    : null;
-}
-
-function mySalonId() {
-  return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-    ? myProfile().salonId
-    : null;
-}
-
-function isPlatformAdmin() {
-  return myRole() == 'platform_admin';
-}
-
-function isLocalAdminOf(salonId) {
-  return myRole() == 'local_admin' && mySalonId() == salonId;
-}
-
-function isMemberOf(salonId) {
-  return isSignedIn() && mySalonId() == salonId;
-}
-
-// Solo se permite crear cuenta "email verificado" para reclamar invitaciones
-// por email/password (Google ya viene con el email verificado por Google).
-function emailIsVerified() {
-  return request.auth.token.email_verified == true;
-}
+//
+// IMPORTANTE: las funciones auxiliares (isSignedIn, myRole, etc.) están
+// declaradas DENTRO de `match /databases/{database}/documents { ... }`
+// porque usan `$(database)` en sus llamadas a get()/exists() — ese path
+// variable solo existe dentro de ese bloque. Declararlas afuera compila
+// pero rompe get()/exists() en tiempo de ejecución (error real detectado
+// con el Rules Playground: "Invalid argument provided to call. Function:
+// [exists]").
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function myRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? myProfile().role
+        : null;
+    }
+
+    function mySalonId() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? myProfile().salonId
+        : null;
+    }
+
+    function isPlatformAdmin() {
+      return myRole() == 'platform_admin';
+    }
+
+    function isLocalAdminOf(salonId) {
+      return myRole() == 'local_admin' && mySalonId() == salonId;
+    }
+
+    function isMemberOf(salonId) {
+      return isSignedIn() && mySalonId() == salonId;
+    }
+
+    // Solo se permite crear cuenta "email verificado" para reclamar invitaciones
+    // por email/password (Google ya viene con el email verificado por Google).
+    function emailIsVerified() {
+      return request.auth.token.email_verified == true;
+    }
 
     // ---------- users ----------
     match /users/{uid} {

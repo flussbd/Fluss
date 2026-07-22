@@ -150,7 +150,6 @@ function renderActionsBar() {
   }
 
   if (order.status === 'reviewing') {
-    bar.appendChild(makeButton('Exportar a WhatsApp', 'btn-secondary', exportWhatsApp));
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', downloadOrderTxt));
     bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', downloadOrderCsv));
@@ -280,27 +279,6 @@ async function handleCloseFortnight() {
   await closeOrder(profile.salonId, order.id, user.uid);
   // El admin define las fechas del próximo pedido explícitamente desde
   // "No hay un pedido quincenal abierto" → no se abre uno automático.
-}
-
-// ---------------------------------------------------------------------------
-// WhatsApp
-// ---------------------------------------------------------------------------
-function exportWhatsApp() {
-  const groups = consolidateByProduct(items, products, categories, adjustments);
-  const lines = [`*Pedido quincenal — ${formatPeriod(order)}*`, ''];
-  for (const group of groups) {
-    lines.push(`*${group.category.name}*`);
-    for (const item of group.items) {
-      const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
-      const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
-      const suffix = notes.length ? ` (${notes.join('; ')})` : '';
-      lines.push(`- ${item.product.name}${meta ? ' [' + meta + ']' : ''}: ${item.totalQuantity} unidades${suffix}`);
-    }
-    lines.push('');
-  }
-  lines.push('Gracias.');
-  const message = lines.join('\n');
-  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
 }
 
 // ---------------------------------------------------------------------------

@@ -103,7 +103,7 @@ function updateOrderUI() {
   statusBadgeEl.classList.remove('hidden');
   statusBadgeEl.textContent = STATUS_LABEL[order.status];
   statusBadgeEl.className = `badge badge-${order.status}`;
-  periodLabelEl.textContent = `Quincena: ${formatPeriod(order)}`;
+  periodLabelEl.textContent = `Período: ${formatPeriod(order)}`;
   closedAlertEl.classList.toggle('hidden', order.status === 'draft');
 }
 

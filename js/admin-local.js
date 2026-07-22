@@ -158,7 +158,7 @@ function renderActionsBar() {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', downloadOrderTxt));
     bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', downloadOrderCsv));
-    bar.appendChild(makeButton('Cerrar quincena y enviar', 'btn-accent', handleCloseFortnight));
+    bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
 
@@ -185,7 +185,7 @@ function renderByProductView(groups) {
   const container = document.getElementById('byProductView');
   container.innerHTML = '';
   if (groups.length === 0) {
-    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a esta quincena.</div>';
+    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a este período.</div>';
     return;
   }
   const editable = order.status === 'draft' || order.status === 'reviewing';
@@ -231,7 +231,7 @@ function renderByUserView(userGroups) {
   const container = document.getElementById('byUserView');
   container.innerHTML = '';
   if (userGroups.length === 0) {
-    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a esta quincena.</div>';
+    container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a este período.</div>';
     return;
   }
   const categoryById = new Map(categories.map((c) => [c.id, c]));
@@ -285,10 +285,10 @@ function setupPeriodModal() {
 }
 
 async function handleCloseFortnight() {
-  if (!confirm('¿Cerrar esta quincena y archivarla? Esta acción no se puede deshacer.')) return;
+  if (!confirm('¿Cerrar este período y archivarlo? Esta acción no se puede deshacer.')) return;
   await closeOrder(profile.salonId, order.id, user.uid);
   // El admin define las fechas del próximo pedido explícitamente desde
-  // "No hay un pedido quincenal abierto" → no se abre uno automático.
+  // "No hay un pedido abierto" → no se abre uno automático.
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ function downloadTextFile(filename, content, mime) {
 
 function downloadOrderTxt() {
   const groups = consolidateByProduct(items, products, categories, adjustments);
-  const lines = [`Pedido quincenal — ${formatPeriod(order)}`, ''];
+  const lines = [`Pedido del período — ${formatPeriod(order)}`, ''];
   for (const group of groups) {
     lines.push(group.category.name.toUpperCase());
     for (const item of group.items) {
@@ -606,7 +606,7 @@ function renderHistory(orders) {
   const container = document.getElementById('historyList');
   container.innerHTML = '';
   if (orders.length === 0) {
-    container.innerHTML = '<div class="empty-state">Todavía no hay quincenas archivadas.</div>';
+    container.innerHTML = '<div class="empty-state">Todavía no hay períodos archivados.</div>';
     return;
   }
   for (const o of orders) {

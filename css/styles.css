@@ -471,6 +471,63 @@ h1, h2, h3 {
   color: var(--text-faint);
 }
 
+/* ---------- Detalle de ítem en el Historial (usuario básico): grilla fija
+   para que Pedido/Llegó/Precio/Mi total queden alineados en todas las filas,
+   sin importar el largo del nombre del producto. ---------- */
+.hist-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hist-item:last-child {
+  border-bottom: none;
+}
+.hist-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 6px;
+}
+.hist-item-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px 10px;
+}
+.hist-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hist-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+.hist-stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-stat-ok {
+  color: var(--accent);
+}
+.hist-stat-warn {
+  color: var(--danger);
+}
+.hist-stat-muted {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+@media (max-width: 420px) {
+  .hist-item-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .stepper {
   display: flex;
   align-items: center;

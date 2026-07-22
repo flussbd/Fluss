@@ -337,54 +337,61 @@ function renderMyHistory(orders) {
         if (histReceived.length > 0) {
           const note = document.createElement('p');
           note.className = 'text-sm text-muted';
-          note.textContent = 'Recibido y costo son el total del pedido de todo el equipo, no solo lo tuyo. El precio es el de ese momento, aunque haya cambiado después.';
+          note.textContent = 'Llegó es el total recibido para todo el equipo, no solo lo tuyo. El precio y tu total son los de ese momento, aunque hayan cambiado después.';
           detail.appendChild(note);
         }
+
+        // Total de "Mi total" (columna final) sumado en todo el período, para
+        // mostrar un resumen al final de la lista.
+        let myPeriodTotal = 0;
+        let myPeriodTotalKnown = false;
+
         for (const { item, product, received, hasReceived, complete } of mineWithStatus) {
-          const line = document.createElement('div');
-          line.className = 'receipt-line';
+          const row = document.createElement('div');
+          row.className = 'hist-item';
           const meta = [product.brand, product.format].filter(Boolean).join(' · ');
           const noteSuffix = item.notes ? ` — ${item.notes}` : '';
 
-          const nameEl = document.createElement('span');
-          nameEl.className = 'receipt-name';
+          const nameEl = document.createElement('p');
+          nameEl.className = 'hist-item-name';
           nameEl.textContent = `${product.name}${meta ? ' — ' + meta : ''}${noteSuffix}`;
+          row.appendChild(nameEl);
 
-          const statsEl = document.createElement('span');
-          statsEl.className = 'receipt-stats';
+          const statsEl = document.createElement('div');
+          statsEl.className = 'hist-item-stats';
 
-          const pedidoEl = document.createElement('span');
-          pedidoEl.className = 'receipt-pedido';
-          pedidoEl.textContent = `Pedido: ${item.quantity}`;
-          statsEl.appendChild(pedidoEl);
+          statsEl.appendChild(buildHistStat('Pedido', String(item.quantity)));
 
           if (hasReceived) {
-            const receivedEl = document.createElement('span');
-            receivedEl.className = `receipt-diff ${complete ? 'receipt-diff-ok' : 'receipt-diff-short'}`;
-            receivedEl.textContent = `Llegó: ${received.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`;
-            statsEl.appendChild(receivedEl);
-
-            if (typeof received.unitPrice === 'number') {
-              const priceEl = document.createElement('span');
-              priceEl.className = 'receipt-pedido';
-              priceEl.textContent = `${formatPrice(received.unitPrice)} c/u`;
-              statsEl.appendChild(priceEl);
-
-              const costEl = document.createElement('span');
-              costEl.className = `receipt-diff ${complete ? 'receipt-diff-ok' : 'receipt-diff-short'}`;
-              costEl.textContent = formatPrice(received.receivedQuantity * received.unitPrice);
-              statsEl.appendChild(costEl);
-            }
+            statsEl.appendChild(
+              buildHistStat('Llegó', `${received.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`, complete ? 'ok' : 'warn')
+            );
           } else {
-            const pendingEl = document.createElement('span');
-            pendingEl.className = 'receipt-diff receipt-diff-pending';
-            pendingEl.textContent = 'Sin registrar';
-            statsEl.appendChild(pendingEl);
+            statsEl.appendChild(buildHistStat('Llegó', '—', 'muted'));
           }
 
-          line.appendChild(nameEl);
-          line.appendChild(statsEl);
-          detail.appendChild(line);
+          if (typeof received?.unitPrice === 'number') {
+            statsEl.appendChild(buildHistStat('Precio', formatPrice(received.unitPrice)));
+            const myTotal = item.quantity * received.unitPrice;
+            myPeriodTotal += myTotal;
+            myPeriodTotalKnown = true;
+            statsEl.appendChild(buildHistStat('Mi total', formatPrice(myTotal), complete ? 'ok' : 'warn'));
+          } else {
+            statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));
+            statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
+          }
+
+          row.appendChild(statsEl);
+          detail.appendChild(row);
+        }
+
+        if (myPeriodTotalKnown) {
+          const totalRow = document.createElement('div');
+          totalRow.className = 'order-total mt-4';
+          totalRow.innerHTML = `<span>Mi total del período</span><span class="order-total-value">${escapeHtml(
+            formatPrice(myPeriodTotal)
+          )}</span>`;
+          detail.appendChild(totalRow);
         }
       } catch (err) {
         console.error(err);
@@ -403,6 +410,21 @@ function escapeHtml(str) {
 function formatPrice(price) {
   if (typeof price !== 'number' || Number.isNaN(price)) return '';
   return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
+}
+
+/** Construye una columna label+valor para la grilla de detalle del Historial. */
+function buildHistStat(label, value, tone = null) {
+  const wrap = document.createElement('div');
+  wrap.className = 'hist-stat';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'hist-stat-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = `hist-stat-value${tone ? ' hist-stat-' + tone : ''}`;
+  valueEl.textContent = value;
+  wrap.appendChild(labelEl);
+  wrap.appendChild(valueEl);
+  return wrap;
 }
 
 function renderCatalog() {

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div class="app-shell" style="padding-bottom: 72px;">
+  <div class="app-shell">
     <header class="app-header">
       <div class="app-header-inner">
         <div class="brand">
@@ -18,6 +18,16 @@
         <button id="logoutBtn" class="btn btn-ghost btn-sm">Salir</button>
       </div>
     </header>
+
+    <nav class="bottom-nav">
+      <div class="bottom-nav-inner">
+        <button id="navCatalog" class="bottom-nav-btn active">Catálogo</button>
+        <button id="navMyOrder" class="bottom-nav-btn">
+          Mi pedido
+          <span id="myOrderBadge" class="bottom-nav-badge hidden">0</span>
+        </button>
+      </div>
+    </nav>
 
     <main class="main main-narrow">
       <div class="flex items-center justify-between mt-4">
@@ -52,16 +62,6 @@
       </div>
     </main>
   </div>
-
-  <nav class="bottom-nav">
-    <div class="bottom-nav-inner">
-      <button id="navCatalog" class="bottom-nav-btn active">Catálogo</button>
-      <button id="navMyOrder" class="bottom-nav-btn">
-        Mi pedido
-        <span id="myOrderBadge" class="bottom-nav-badge hidden">0</span>
-      </button>
-    </div>
-  </nav>
 
   <template id="productCardTemplate">
     <div class="product-card">

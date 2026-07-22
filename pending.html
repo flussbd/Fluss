@@ -18,20 +18,46 @@
         a intentar.
       </p>
       <button id="retryBtn" class="btn btn-primary btn-lg mt-4">Ya me invitaron, reintentar</button>
+      <button id="resendBtn" class="btn btn-secondary mt-4 hidden">Reenviar email de verificación</button>
       <button id="logoutBtn" class="btn btn-ghost mt-4">Cerrar sesión</button>
     </div>
   </div>
 
   <script type="module">
-    import { auth, logout, resolveProfile, homeForRole } from './js/auth.js';
+    import { auth, logout, resolveProfile, homeForRole, resendVerificationEmail } from './js/auth.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     const params = new URLSearchParams(window.location.search);
+    const resendBtn = document.getElementById('resendBtn');
     if (params.get('verify') === '1') {
       document.getElementById('title').textContent = 'Confirmá tu email';
       document.getElementById('message').textContent =
         'Te enviamos un email de verificación. Abrilo, confirmá tu cuenta y después volvé a esta pantalla.';
+      resendBtn.classList.remove('hidden');
     }
+
+    resendBtn.addEventListener('click', async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        window.location.href = 'index.html';
+        return;
+      }
+      resendBtn.disabled = true;
+      resendBtn.textContent = 'Enviando…';
+      try {
+        await resendVerificationEmail(user);
+        resendBtn.textContent = 'Listo, te lo volvimos a mandar';
+      } catch (err) {
+        console.error(err);
+        resendBtn.disabled = false;
+        resendBtn.textContent = 'Reenviar email de verificación';
+        if (err.code === 'auth/too-many-requests') {
+          alert('Ya lo mandamos hace poco. Esperá un momento antes de volver a pedirlo.');
+        } else {
+          alert('No se pudo reenviar el email. Probá de nuevo en un momento.');
+        }
+      }
+    });
 
     document.getElementById('retryBtn').addEventListener('click', async () => {
       const user = auth.currentUser;

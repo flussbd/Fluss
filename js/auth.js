@@ -47,6 +47,11 @@ export function resetPassword(email) {
   return sendPasswordResetEmail(auth, email);
 }
 
+/** Reenvía el email de verificación de Firebase a la cuenta ya logueada (pantalla "cuenta pendiente"). */
+export function resendVerificationEmail(user) {
+  return sendEmailVerification(user);
+}
+
 export function logout() {
   return signOut(auth);
 }

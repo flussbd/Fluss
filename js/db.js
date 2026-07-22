@@ -31,6 +31,9 @@ const adjustmentsCol = (salonId, orderId) => collection(db, 'salons', salonId, '
 const adjustmentRef = (salonId, orderId, productId) =>
   doc(db, 'salons', salonId, 'orders', orderId, 'adjustments', productId);
 const submissionRef = (salonId, orderId, uid) => doc(db, 'salons', salonId, 'orders', orderId, 'submissions', uid);
+const receivedCol = (salonId, orderId) => collection(db, 'salons', salonId, 'orders', orderId, 'received');
+const receivedRef = (salonId, orderId, productId) =>
+  doc(db, 'salons', salonId, 'orders', orderId, 'received', productId);
 
 // ---------------------------------------------------------------------------
 // Suscripciones en tiempo real (catálogo se ve "sin escribir": categorías +
@@ -66,16 +69,27 @@ export function listenOrderItems(salonId, orderId, cb) {
   return onSnapshot(itemsCol(salonId, orderId), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
-/** Trae una sola vez los ítems y ajustes de un pedido ya cerrado (para el detalle del historial). */
+/** Trae una sola vez los ítems, ajustes y recepción de un pedido ya cerrado (para el detalle del historial). */
 export async function getOrderDetail(salonId, orderId) {
-  const [itemsSnap, adjustmentsSnap] = await Promise.all([
+  const [itemsSnap, adjustmentsSnap, receivedSnap] = await Promise.all([
     getDocs(itemsCol(salonId, orderId)),
     getDocs(adjustmentsCol(salonId, orderId)),
+    getDocs(receivedCol(salonId, orderId)),
   ]);
   return {
     items: itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     adjustments: adjustmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    received: receivedSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
   };
+}
+
+/** Registra cuánto llegó realmente de un producto para un pedido ya archivado. */
+export function setReceivedQuantity(salonId, orderId, productId, quantity, adminUid) {
+  return setDoc(receivedRef(salonId, orderId, productId), {
+    receivedQuantity: quantity,
+    updatedBy: adminUid,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export function listenAdjustments(salonId, orderId, cb) {
@@ -179,7 +193,7 @@ export function addCategory(salonId, name, sortOrder) {
   return addDoc(categoriesCol(salonId), { name, sortOrder });
 }
 
-export function addProduct(salonId, { name, categoryId, brand, line, shadeCode, format, supplierName, productCode }) {
+export function addProduct(salonId, { name, categoryId, brand, line, shadeCode, format, supplierName, productCode, price }) {
   return addDoc(productsCol(salonId), {
     name,
     categoryId,
@@ -189,6 +203,7 @@ export function addProduct(salonId, { name, categoryId, brand, line, shadeCode, 
     format: format || '',
     supplierName: supplierName || '',
     productCode: productCode || '',
+    price: typeof price === 'number' && !Number.isNaN(price) ? price : null,
     active: true,
   });
 }
@@ -199,6 +214,12 @@ export function deactivateProduct(salonId, productId) {
 
 export function activateProduct(salonId, productId) {
   return updateDoc(doc(productsCol(salonId), productId), { active: true });
+}
+
+export function updateProductPrice(salonId, productId, price) {
+  return updateDoc(doc(productsCol(salonId), productId), {
+    price: typeof price === 'number' && !Number.isNaN(price) ? price : null,
+  });
 }
 
 export function updateUserName(uid, name) {

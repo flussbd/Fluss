@@ -17,6 +17,8 @@ import {
   addProduct,
   deactivateProduct,
   activateProduct,
+  updateProductPrice,
+  setReceivedQuantity,
   createInvite,
   updateUserName,
   consolidateByProduct,
@@ -160,7 +162,7 @@ function renderActionsBar() {
   if (order.status === 'reviewing') {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
-    bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', () => downloadOrderCsv()));
+    bar.appendChild(makeButton('Descargar Excel', 'btn-secondary', () => downloadOrderXlsx()));
     bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
@@ -338,16 +340,50 @@ function downloadOrderTxt(o = order, groups = consolidateByProduct(items, produc
   downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.txt`, lines.join('\n'), 'text/plain');
 }
 
-function csvEscape(value) {
-  const str = String(value ?? '');
-  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
-  return str;
-}
+/**
+ * Genera un .xlsx real (vía SheetJS, cargado como script global en admin-local.html)
+ * con el pedido consolidado: precio, cantidad pedida/ajustada, cantidad recibida
+ * (si ya se cargó en el Historial) y la diferencia entre ambas.
+ */
+function downloadOrderXlsx(
+  o = order,
+  groups = consolidateByProduct(items, products, categories, adjustments),
+  receivedByProduct = new Map()
+) {
+  if (typeof XLSX === 'undefined') {
+    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
+    return;
+  }
+  const header = [
+    'Categoria',
+    'Marca',
+    'Linea',
+    'Producto',
+    'Tono',
+    'Formato',
+    'Proveedor',
+    'Precio unitario',
+    'Pedido',
+    'Recibido',
+    'Diferencia',
+    'Costo recibido',
+  ];
+  const rows = [header];
+  let totalPedido = 0;
+  let totalRecibido = 0;
+  let totalCosto = 0;
 
-function downloadOrderCsv(o = order, groups = consolidateByProduct(items, products, categories, adjustments)) {
-  const rows = [['Categoria', 'Marca', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Proveedor']];
   for (const group of groups) {
     for (const item of group.items) {
+      const receivedRaw = receivedByProduct.get(item.product.id);
+      const hasReceived = typeof receivedRaw === 'number';
+      const price = typeof item.product.price === 'number' ? item.product.price : null;
+      const cost = hasReceived && price !== null ? receivedRaw * price : '';
+
+      totalPedido += item.totalQuantity;
+      if (hasReceived) totalRecibido += receivedRaw;
+      if (typeof cost === 'number') totalCosto += cost;
+
       rows.push([
         group.category.name,
         item.product.brand || '',
@@ -355,14 +391,22 @@ function downloadOrderCsv(o = order, groups = consolidateByProduct(items, produc
         item.product.name,
         item.product.shadeCode || '',
         item.product.format || '',
-        item.totalQuantity,
         item.product.supplierName || '',
+        price !== null ? price : '',
+        item.totalQuantity,
+        hasReceived ? receivedRaw : '',
+        hasReceived ? receivedRaw - item.totalQuantity : '',
+        cost,
       ]);
     }
   }
-  const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
-  // El BOM al inicio ayuda a que Excel detecte UTF-8 y muestre bien tildes/ñ.
-  downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.csv`, '\uFEFF' + csv, 'text/csv');
+
+  rows.push(['', '', '', '', '', '', '', 'TOTAL', totalPedido, totalRecibido, totalRecibido - totalPedido, totalCosto]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pedido');
+  XLSX.writeFile(wb, `pedido-${o.periodStart}-a-${o.periodEnd}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
@@ -388,8 +432,10 @@ function setupCatalogForms() {
     const format = document.getElementById('productFormat').value.trim();
     const supplierName = document.getElementById('productSupplier').value.trim();
     const productCode = document.getElementById('productCode').value.trim();
+    const priceRaw = document.getElementById('productPrice').value.trim();
+    const price = priceRaw ? Number(priceRaw) : null;
     if (!name || !brand || !categoryId) return;
-    await addProduct(profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode });
+    await addProduct(profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode, price });
     e.target.reset();
   });
 
@@ -447,8 +493,9 @@ async function bulkImportCatalog(text) {
     } else {
       if (!currentCategoryId) continue; // producto listado antes de cualquier "# Categoría": se ignora
       const parts = rawLine.split(';').map((s) => s.trim());
-      const [name, brand, productLine, shadeCode, format, supplierName, productCode] = parts;
+      const [name, brand, productLine, shadeCode, format, supplierName, productCode, priceRaw] = parts;
       if (!name) continue;
+      const price = priceRaw ? Number(priceRaw) : null;
       await addProduct(profile.salonId, {
         name,
         categoryId: currentCategoryId,
@@ -458,6 +505,7 @@ async function bulkImportCatalog(text) {
         format: format || '',
         supplierName: supplierName || '',
         productCode: productCode || '',
+        price: price !== null && !Number.isNaN(price) ? price : null,
       });
       created.products++;
     }
@@ -507,6 +555,11 @@ function renderProductList() {
   }
 }
 
+function formatPrice(price) {
+  if (typeof price !== 'number' || Number.isNaN(price)) return null;
+  return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
+}
+
 function buildProductRow(p, categoryById, isInactive) {
   const row = document.createElement('div');
   row.className = 'list-row';
@@ -517,6 +570,7 @@ function buildProductRow(p, categoryById, isInactive) {
     p.shadeCode,
     p.format,
     p.supplierName,
+    formatPrice(p.price),
   ].filter(Boolean);
   row.innerHTML = `
     <div>
@@ -524,6 +578,28 @@ function buildProductRow(p, categoryById, isInactive) {
       <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
     </div>
   `;
+
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.gap = '6px';
+
+  const priceBtn = document.createElement('button');
+  priceBtn.className = 'btn btn-ghost btn-sm';
+  priceBtn.textContent = 'Editar precio';
+  priceBtn.addEventListener('click', async () => {
+    const current = typeof p.price === 'number' ? String(p.price) : '';
+    const input = prompt(`Precio para "${p.name}":`, current);
+    if (input === null) return;
+    const trimmed = input.trim();
+    const price = trimmed ? Number(trimmed) : null;
+    if (trimmed && Number.isNaN(price)) {
+      alert('Ingresá un número válido.');
+      return;
+    }
+    await updateProductPrice(profile.salonId, p.id, price);
+  });
+  actions.appendChild(priceBtn);
+
   const btn = document.createElement('button');
   btn.className = 'btn btn-ghost btn-sm';
   if (isInactive) {
@@ -537,7 +613,8 @@ function buildProductRow(p, categoryById, isInactive) {
       if (confirm(`¿Quitar "${p.name}" del catálogo?`)) await deactivateProduct(profile.salonId, p.id);
     });
   }
-  row.appendChild(btn);
+  actions.appendChild(btn);
+  row.appendChild(actions);
   return row;
 }
 
@@ -652,9 +729,13 @@ function renderHistory(orders) {
       loaded = true;
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
-        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(profile.salonId, o.id);
+        const { items: histItems, adjustments: histAdjustments, received: histReceived } = await getOrderDetail(
+          profile.salonId,
+          o.id
+        );
         const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
         const userGroups = consolidateByUser(histItems, products);
+        const receivedByProduct = new Map(histReceived.map((r) => [r.id, r.receivedQuantity]));
         detail.innerHTML = '';
 
         const topBar = document.createElement('section');
@@ -688,16 +769,16 @@ function renderHistory(orders) {
           e.stopPropagation();
           downloadOrderTxt(o, productGroups);
         });
-        const btnCsv = document.createElement('button');
-        btnCsv.type = 'button';
-        btnCsv.className = 'btn btn-ghost btn-sm';
-        btnCsv.textContent = 'Descargar CSV';
-        btnCsv.addEventListener('click', (e) => {
+        const btnXlsx = document.createElement('button');
+        btnXlsx.type = 'button';
+        btnXlsx.className = 'btn btn-ghost btn-sm';
+        btnXlsx.textContent = 'Descargar Excel';
+        btnXlsx.addEventListener('click', (e) => {
           e.stopPropagation();
-          downloadOrderCsv(o, productGroups);
+          downloadOrderXlsx(o, productGroups, receivedByProduct);
         });
         downloadWrap.appendChild(btnTxt);
-        downloadWrap.appendChild(btnCsv);
+        downloadWrap.appendChild(btnXlsx);
 
         topBar.appendChild(switchWrap);
         topBar.appendChild(downloadWrap);
@@ -709,7 +790,11 @@ function renderHistory(orders) {
         detail.appendChild(productSection);
         detail.appendChild(userSection);
 
-        renderHistProductView(productSection, productGroups, categoryById);
+        renderHistProductView(productSection, productGroups, categoryById, receivedByProduct, {
+          salonId: profile.salonId,
+          orderId: o.id,
+          adminUid: user.uid,
+        });
         renderHistUserView(userSection, userGroups, categoryById, userById);
 
         btnTotal.addEventListener('click', (e) => {
@@ -736,7 +821,14 @@ function renderHistory(orders) {
   }
 }
 
-function renderHistProductView(container, groups, categoryById) {
+/** Clasifica la diferencia recibido-pedido para colorearla (ver .receipt-diff-* en styles.css). */
+function receiptDiffClass(hasReceived, diff) {
+  if (!hasReceived) return 'receipt-diff-pending';
+  if (diff === 0) return 'receipt-diff-ok';
+  return diff < 0 ? 'receipt-diff-short' : 'receipt-diff-over';
+}
+
+function renderHistProductView(container, groups, categoryById, receivedByProduct = new Map(), ctx = null) {
   container.innerHTML = '';
   if (groups.length === 0) {
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
@@ -751,8 +843,55 @@ function renderHistProductView(container, groups, categoryById) {
     container.appendChild(catTitle);
     for (const item of group.items) {
       const line = document.createElement('div');
+      line.className = 'receipt-line';
       const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
-      line.innerHTML = `<span>${escapeHtml(item.product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}</span><span>${item.totalQuantity} unidades</span>`;
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'receipt-name';
+      nameEl.textContent = `${item.product.name}${meta ? ' — ' + meta : ''}`;
+
+      const statsEl = document.createElement('span');
+      statsEl.className = 'receipt-stats';
+
+      const pedidoEl = document.createElement('span');
+      pedidoEl.className = 'receipt-pedido';
+      pedidoEl.textContent = `Pedido: ${item.totalQuantity}`;
+
+      const receivedRaw = receivedByProduct.get(item.product.id);
+      const hasReceived = typeof receivedRaw === 'number';
+
+      const input = document.createElement('input');
+      input.className = 'input receipt-input';
+      input.type = 'number';
+      input.min = '0';
+      input.placeholder = 'Recibido';
+      if (hasReceived) input.value = receivedRaw;
+      input.disabled = !ctx;
+
+      const diffEl = document.createElement('span');
+      diffEl.className = `receipt-diff ${receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)}`;
+      diffEl.textContent = hasReceived ? (receivedRaw - item.totalQuantity > 0 ? `+${receivedRaw - item.totalQuantity}` : String(receivedRaw - item.totalQuantity)) : '—';
+
+      if (ctx) {
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('change', () => {
+          const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
+          if (value === null) return;
+          setReceivedQuantity(ctx.salonId, ctx.orderId, item.product.id, value, ctx.adminUid)
+            .then(() => {
+              const diff = value - item.totalQuantity;
+              diffEl.className = `receipt-diff ${receiptDiffClass(true, diff)}`;
+              diffEl.textContent = diff > 0 ? `+${diff}` : String(diff);
+            })
+            .catch(console.error);
+        });
+      }
+
+      statsEl.appendChild(pedidoEl);
+      statsEl.appendChild(input);
+      statsEl.appendChild(diffEl);
+      line.appendChild(nameEl);
+      line.appendChild(statsEl);
       container.appendChild(line);
     }
   }

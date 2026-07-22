@@ -167,6 +167,12 @@ service cloud.firestore {
           allow write: if isLocalAdminOf(salonId) || isPlatformAdmin();
         }
 
+        // ---------- recepción: cantidad que realmente llegó, por producto ----------
+        match /received/{productId} {
+          allow read: if isMemberOf(salonId) || isPlatformAdmin();
+          allow write: if isLocalAdminOf(salonId) || isPlatformAdmin();
+        }
+
         // ---------- cierre individual: cada usuario marca su propio pedido
         // como "listo" (bloquea sus items) antes de que cierre todo el
         // período. Doc id = uid. Solo existe si esa persona ya cerró.

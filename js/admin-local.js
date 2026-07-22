@@ -1182,11 +1182,17 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       const hasReceived = !!received && typeof received.receivedQuantity === 'number';
       const receivedRaw = hasReceived ? received.receivedQuantity : null;
 
+      // Etiqueta fija (no solo el placeholder, que desaparece apenas se
+      // escribe un valor) para que quede claro qué es ese campo.
+      const recibidoLabelEl = document.createElement('span');
+      recibidoLabelEl.className = 'receipt-pedido';
+      recibidoLabelEl.textContent = 'Recibido:';
+
       const input = document.createElement('input');
       input.className = 'input receipt-input';
       input.type = 'number';
       input.min = '0';
-      input.placeholder = 'Recibido';
+      input.placeholder = '0';
       if (hasReceived) input.value = receivedRaw;
       input.disabled = !ctx;
 
@@ -1214,6 +1220,7 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       }
 
       statsEl.appendChild(pedidoEl);
+      statsEl.appendChild(recibidoLabelEl);
       statsEl.appendChild(input);
       statsEl.appendChild(diffEl);
       line.appendChild(nameEl);

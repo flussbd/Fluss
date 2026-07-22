@@ -7,7 +7,8 @@ const STATUS_LABEL = {
   completed: 'Pedido enviado a proveedor',
 };
 
-const tabsEl = document.getElementById('tabs');
+const categoryFilterEl = document.getElementById('categoryFilter');
+const brandFilterEl = document.getElementById('brandFilter');
 const productGridEl = document.getElementById('productGrid');
 const emptyProductsEl = document.getElementById('emptyProducts');
 const myOrderGridEl = document.getElementById('myOrderGrid');
@@ -28,6 +29,7 @@ let products = [];
 let order = null;
 let myItems = {}; // productId -> { quantity, notes }
 let activeCategory = 'all';
+let activeBrand = 'all';
 let activeView = 'catalog';
 let itemsUnsub = null;
 
@@ -48,14 +50,26 @@ async function init() {
   navCatalogBtn.addEventListener('click', () => setView('catalog'));
   navMyOrderBtn.addEventListener('click', () => setView('myOrder'));
 
+  categoryFilterEl.addEventListener('change', () => {
+    activeCategory = categoryFilterEl.value;
+    activeBrand = 'all';
+    renderBrandFilter();
+    renderCatalog();
+  });
+  brandFilterEl.addEventListener('change', () => {
+    activeBrand = brandFilterEl.value;
+    renderCatalog();
+  });
+
   listenCategories(profile.salonId, (cats) => {
     categories = cats;
-    renderTabs();
+    renderCategoryFilter();
     renderCatalog();
   });
 
   listenProducts(profile.salonId, (prods) => {
     products = prods;
+    renderBrandFilter();
     renderCatalog();
   });
 
@@ -115,22 +129,28 @@ function formatPeriod(o) {
   return `${start} — ${end}`;
 }
 
-function renderTabs() {
-  tabsEl.innerHTML = '';
-  tabsEl.appendChild(makeTab('Todos', 'all'));
-  for (const c of categories) tabsEl.appendChild(makeTab(c.name, c.id));
+function renderCategoryFilter() {
+  categoryFilterEl.innerHTML = '';
+  categoryFilterEl.appendChild(makeOption('Todas las categorías', 'all'));
+  for (const c of categories) categoryFilterEl.appendChild(makeOption(c.name, c.id));
+  categoryFilterEl.value = activeCategory;
 }
 
-function makeTab(label, value) {
-  const btn = document.createElement('button');
-  btn.className = 'tab' + (activeCategory === value ? ' active' : '');
-  btn.textContent = label;
-  btn.addEventListener('click', () => {
-    activeCategory = value;
-    renderTabs();
-    renderCatalog();
-  });
-  return btn;
+function renderBrandFilter() {
+  const inCategory = activeCategory === 'all' ? products : products.filter((p) => p.categoryId === activeCategory);
+  const brands = Array.from(new Set(inCategory.map((p) => p.brand).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  brandFilterEl.innerHTML = '';
+  brandFilterEl.appendChild(makeOption('Todas las marcas', 'all'));
+  for (const brand of brands) brandFilterEl.appendChild(makeOption(brand, brand));
+  if (!brands.includes(activeBrand)) activeBrand = 'all';
+  brandFilterEl.value = activeBrand;
+}
+
+function makeOption(label, value) {
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = label;
+  return opt;
 }
 
 function disabledNow() {
@@ -138,7 +158,8 @@ function disabledNow() {
 }
 
 function renderCatalog() {
-  const visible = activeCategory === 'all' ? products : products.filter((p) => p.categoryId === activeCategory);
+  let visible = activeCategory === 'all' ? products : products.filter((p) => p.categoryId === activeCategory);
+  if (activeBrand !== 'all') visible = visible.filter((p) => p.brand === activeBrand);
   productGridEl.innerHTML = '';
   emptyProductsEl.classList.toggle('hidden', visible.length > 0);
   for (const product of visible) {

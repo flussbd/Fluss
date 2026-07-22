@@ -157,8 +157,8 @@ function renderActionsBar() {
 
   if (order.status === 'reviewing') {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
-    bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', downloadOrderTxt));
-    bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', downloadOrderCsv));
+    bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
+    bar.appendChild(makeButton('Descargar CSV', 'btn-secondary', () => downloadOrderCsv()));
     bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
@@ -307,9 +307,8 @@ function downloadTextFile(filename, content, mime) {
   URL.revokeObjectURL(url);
 }
 
-function downloadOrderTxt() {
-  const groups = consolidateByProduct(items, products, categories, adjustments);
-  const lines = [`Pedido del período — ${formatPeriod(order)}`, ''];
+function downloadOrderTxt(o = order, groups = consolidateByProduct(items, products, categories, adjustments)) {
+  const lines = [`Pedido del período — ${formatPeriod(o)}`, ''];
   for (const group of groups) {
     lines.push(group.category.name.toUpperCase());
     for (const item of group.items) {
@@ -320,7 +319,7 @@ function downloadOrderTxt() {
     }
     lines.push('');
   }
-  downloadTextFile(`pedido-${order.periodStart}-a-${order.periodEnd}.txt`, lines.join('\n'), 'text/plain');
+  downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.txt`, lines.join('\n'), 'text/plain');
 }
 
 function csvEscape(value) {
@@ -329,8 +328,7 @@ function csvEscape(value) {
   return str;
 }
 
-function downloadOrderCsv() {
-  const groups = consolidateByProduct(items, products, categories, adjustments);
+function downloadOrderCsv(o = order, groups = consolidateByProduct(items, products, categories, adjustments)) {
   const rows = [['Categoria', 'Marca', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Proveedor']];
   for (const group of groups) {
     for (const item of group.items) {
@@ -348,7 +346,7 @@ function downloadOrderCsv() {
   }
   const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
   // El BOM al inicio ayuda a que Excel detecte UTF-8 y muestre bien tildes/ñ.
-  downloadTextFile(`pedido-${order.periodStart}-a-${order.periodEnd}.csv`, '\uFEFF' + csv, 'text/csv');
+  downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.csv`, '\uFEFF' + csv, 'text/csv');
 }
 
 // ---------------------------------------------------------------------------
@@ -643,9 +641,16 @@ function renderHistory(orders) {
         const userGroups = consolidateByUser(histItems, products);
         detail.innerHTML = '';
 
+        const topBar = document.createElement('section');
+        topBar.style.display = 'flex';
+        topBar.style.flexWrap = 'wrap';
+        topBar.style.justifyContent = 'space-between';
+        topBar.style.alignItems = 'center';
+        topBar.style.gap = '8px';
+        topBar.style.marginBottom = '10px';
+
         const switchWrap = document.createElement('section');
         switchWrap.className = 'view-switch';
-        switchWrap.style.marginBottom = '10px';
         const btnTotal = document.createElement('button');
         btnTotal.type = 'button';
         btnTotal.textContent = 'Total';
@@ -655,7 +660,32 @@ function renderHistory(orders) {
         btnUser.textContent = 'Por usuario';
         switchWrap.appendChild(btnTotal);
         switchWrap.appendChild(btnUser);
-        detail.appendChild(switchWrap);
+
+        const downloadWrap = document.createElement('div');
+        downloadWrap.style.display = 'flex';
+        downloadWrap.style.gap = '8px';
+        const btnTxt = document.createElement('button');
+        btnTxt.type = 'button';
+        btnTxt.className = 'btn btn-ghost btn-sm';
+        btnTxt.textContent = 'Descargar TXT';
+        btnTxt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadOrderTxt(o, productGroups);
+        });
+        const btnCsv = document.createElement('button');
+        btnCsv.type = 'button';
+        btnCsv.className = 'btn btn-ghost btn-sm';
+        btnCsv.textContent = 'Descargar CSV';
+        btnCsv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadOrderCsv(o, productGroups);
+        });
+        downloadWrap.appendChild(btnTxt);
+        downloadWrap.appendChild(btnCsv);
+
+        topBar.appendChild(switchWrap);
+        topBar.appendChild(downloadWrap);
+        detail.appendChild(topBar);
 
         const productSection = document.createElement('section');
         const userSection = document.createElement('section');

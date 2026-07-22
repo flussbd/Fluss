@@ -374,6 +374,18 @@ h1, h2, h3 {
   color: var(--bg);
 }
 
+/* ---------- Filtros por categoría / marca (usuario básico) ---------- */
+.filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.select-input {
+  flex: 1 1 140px;
+  cursor: pointer;
+}
+
 /* ---------- Catálogo de productos (click, sin escribir) ---------- */
 .product-grid {
   display: grid;

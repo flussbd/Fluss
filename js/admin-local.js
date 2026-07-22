@@ -229,6 +229,7 @@ function renderByUserView(userGroups) {
     container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a esta quincena.</div>';
     return;
   }
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
   for (const group of userGroups) {
     const wrap = document.createElement('div');
     wrap.className = 'user-group';
@@ -239,7 +240,10 @@ function renderByUserView(userGroups) {
     for (const it of group.items) {
       const li = document.createElement('li');
       const noteSuffix = it.notes ? ` — ${it.notes}` : '';
-      li.innerHTML = `<span>${escapeHtml(it.product.name)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
+      const label = [categoryById.get(it.product.categoryId)?.name, it.product.brand, it.product.name]
+        .filter(Boolean)
+        .join(' · ');
+      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
       ul.appendChild(li);
     }
     wrap.appendChild(ul);

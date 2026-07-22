@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fluss — Administrador</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -42,10 +42,10 @@
             </div>
             <span id="statusBadge" class="badge"></span>
           </div>
-          <div class="stat-row">
-            <span class="stat" id="statProducts"></span>
-            <span class="stat" id="statUnits"></span>
-            <span class="stat" id="statUsers"></span>
+          <div class="stat-grid">
+            <div class="stat-tile"><span class="stat-tile-value" id="statProducts"></span><span class="stat-tile-label">productos</span></div>
+            <div class="stat-tile"><span class="stat-tile-value" id="statUnits"></span><span class="stat-tile-label">unidades totales</span></div>
+            <div class="stat-tile"><span class="stat-tile-value" id="statUsers"></span><span class="stat-tile-label">personas participaron</span></div>
           </div>
         </div>
 
@@ -81,20 +81,36 @@
           <h2>Nuevo producto</h2>
           <form id="productForm" class="mt-4">
             <div class="field">
-              <label>Nombre</label>
-              <input class="input" id="productName" required />
+              <label>Nombre del producto</label>
+              <input class="input" id="productName" placeholder="Ej: Color Touch 5/0 Castaño Claro" required />
+            </div>
+            <div class="field">
+              <label>Marca</label>
+              <input class="input" id="productBrand" placeholder="Ej: Wella" required />
+            </div>
+            <div class="field">
+              <label>Línea (opcional)</label>
+              <input class="input" id="productLine" placeholder="Ej: Color Touch" />
             </div>
             <div class="field">
               <label>Categoría</label>
               <select class="input" id="productCategory" required></select>
             </div>
             <div class="field">
-              <label>Unidad</label>
-              <input class="input" id="productUnit" placeholder="unidad, litro, caja..." value="unidad" />
+              <label>Tono / código (opcional)</label>
+              <input class="input" id="productShade" placeholder="Ej: 5/0, 88/03, 7NN" />
+            </div>
+            <div class="field">
+              <label>Formato / volumen (opcional)</label>
+              <input class="input" id="productFormat" placeholder="Ej: 60 ml, 1000 ml, 4% (13 vol)" />
             </div>
             <div class="field">
               <label>Proveedor (opcional)</label>
               <input class="input" id="productSupplier" />
+            </div>
+            <div class="field">
+              <label>Código interno (opcional)</label>
+              <input class="input" id="productCode" placeholder="Ej: PROD-001" />
             </div>
             <button class="btn btn-secondary" type="submit">Agregar producto</button>
           </form>
@@ -103,18 +119,18 @@
         <div class="card mt-4">
           <h2>Carga masiva (una sola vez)</h2>
           <p class="text-muted text-sm mt-4">
-            Pegá varias categorías y productos de una. Una línea que empieza con <code>#</code> es una categoría;
-            las líneas siguientes son productos de esa categoría, en formato <code>nombre; unidad; proveedor</code>
-            (unidad y proveedor son opcionales). Ejemplo:
+            Pegá varias categorías y productos de una. Una línea que empieza con <code>#</code> es una categoría
+            (el tipo de producto: Tinte, Oxidante, Decolorante, etc.); las líneas siguientes son productos de esa
+            categoría, en formato <code>nombre; marca; línea; tono; formato; proveedor; código</code> (todo menos
+            el nombre es opcional, se puede dejar vacío entre punto y coma). Ejemplo:
           </p>
-          <pre class="text-sm text-muted" style="background:var(--neutral-bg); padding:10px 12px; border-radius:10px; overflow-x:auto;"># Tinturas
-Tinte rubio 60ml; unidad; Proveedor X
-Tinte negro 60ml; unidad
+          <pre class="text-sm text-muted" style="background:var(--neutral-bg); padding:10px 12px; border-radius:10px; overflow-x:auto;"># Tinte
+Color Touch 5/0 Castaño Claro; Wella; Color Touch; 5/0; 60 ml
+Illumina 9/60 Rubio Muy Claro Dorado; Wella; Illumina Color; 9/60; 60 ml
 
-# Oxidantes
-Oxidante 20 vol; litro
-Oxidante 30 vol; litro</pre>
-          <textarea id="bulkImportInput" class="input mt-4" rows="8" style="font-family: monospace; resize: vertical;" placeholder="# Tinturas&#10;Tinte rubio 60ml; unidad"></textarea>
+# Oxidante
+Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml</pre>
+          <textarea id="bulkImportInput" class="input mt-4" rows="8" style="font-family: monospace; resize: vertical;" placeholder="# Tinte&#10;Color Touch 5/0; Wella; Color Touch; 5/0; 60 ml"></textarea>
           <button id="bulkImportBtn" class="btn btn-primary mt-4">Cargar todo</button>
           <p id="bulkImportResult" class="text-sm text-muted mt-4"></p>
         </div>

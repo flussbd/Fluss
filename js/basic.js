@@ -171,7 +171,7 @@ function buildProductCard(product, local) {
 
   node.classList.toggle('selected', local.quantity > 0);
   node.querySelector('.product-name').textContent = product.name;
-  node.querySelector('.product-meta').textContent = [product.defaultUnit, product.supplierName]
+  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.shadeCode, product.format, product.supplierName]
     .filter(Boolean)
     .join(' · ');
 

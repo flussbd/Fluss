@@ -147,12 +147,16 @@ export function addCategory(salonId, name, sortOrder) {
   return addDoc(categoriesCol(salonId), { name, sortOrder });
 }
 
-export function addProduct(salonId, { name, categoryId, defaultUnit, supplierName }) {
+export function addProduct(salonId, { name, categoryId, brand, line, shadeCode, format, supplierName, productCode }) {
   return addDoc(productsCol(salonId), {
     name,
     categoryId,
-    defaultUnit: defaultUnit || 'unidad',
-    supplierName: supplierName || null,
+    brand: brand || '',
+    line: line || '',
+    shadeCode: shadeCode || '',
+    format: format || '',
+    supplierName: supplierName || '',
+    productCode: productCode || '',
     active: true,
   });
 }

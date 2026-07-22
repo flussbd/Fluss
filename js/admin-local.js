@@ -130,9 +130,9 @@ function renderDashboard() {
   const totalProducts = groups.reduce((s, g) => s + g.items.length, 0);
   const totalUnits = groups.reduce((s, g) => s + g.items.reduce((s2, i) => s2 + i.totalQuantity, 0), 0);
   const totalUsers = new Set(items.map((i) => i.userId)).size;
-  document.getElementById('statProducts').textContent = `${totalProducts} productos`;
-  document.getElementById('statUnits').textContent = `${totalUnits} unidades totales`;
-  document.getElementById('statUsers').textContent = `${totalUsers} personas participaron`;
+  document.getElementById('statProducts').textContent = String(totalProducts);
+  document.getElementById('statUnits').textContent = String(totalUnits);
+  document.getElementById('statUsers').textContent = String(totalUsers);
 
   renderByProductView(groups);
   renderByUserView(consolidateByUser(items, products));
@@ -194,7 +194,9 @@ function renderByProductView(groups) {
     for (const item of group.items) {
       const row = template.content.firstElementChild.cloneNode(true);
       row.querySelector('.product-name').textContent = item.product.name;
-      row.querySelector('.product-meta').textContent = `${item.breakdown.length} persona(s) · ${item.product.defaultUnit}`;
+      row.querySelector('.product-meta').textContent = [`${item.breakdown.length} persona(s)`, item.product.brand, item.product.format]
+        .filter(Boolean)
+        .join(' · ');
 
       const qtyInput = row.querySelector('.qty-input');
       qtyInput.value = item.totalQuantity;
@@ -236,7 +238,7 @@ function renderByUserView(userGroups) {
     for (const it of group.items) {
       const li = document.createElement('li');
       const noteSuffix = it.notes ? ` — ${it.notes}` : '';
-      li.innerHTML = `<span>${escapeHtml(it.product.name)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} ${escapeHtml(it.product.defaultUnit)}</span>`;
+      li.innerHTML = `<span>${escapeHtml(it.product.name)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
@@ -288,8 +290,9 @@ function exportWhatsApp() {
     lines.push(`*${group.category.name}*`);
     for (const item of group.items) {
       const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
+      const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
       const suffix = notes.length ? ` (${notes.join('; ')})` : '';
-      lines.push(`- ${item.product.name}: ${item.totalQuantity} ${item.product.defaultUnit}${suffix}`);
+      lines.push(`- ${item.product.name}${meta ? ' [' + meta + ']' : ''}: ${item.totalQuantity} unidades${suffix}`);
     }
     lines.push('');
   }
@@ -320,8 +323,9 @@ function downloadOrderTxt() {
     lines.push(group.category.name.toUpperCase());
     for (const item of group.items) {
       const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
+      const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
       const suffix = notes.length ? ` (${notes.join('; ')})` : '';
-      lines.push(`- ${item.product.name}: ${item.totalQuantity} ${item.product.defaultUnit}${suffix}`);
+      lines.push(`- ${item.product.name}${meta ? ' [' + meta + ']' : ''}: ${item.totalQuantity} unidades${suffix}`);
     }
     lines.push('');
   }
@@ -336,13 +340,16 @@ function csvEscape(value) {
 
 function downloadOrderCsv() {
   const groups = consolidateByProduct(items, products, categories, adjustments);
-  const rows = [['Categoria', 'Producto', 'Unidad', 'Cantidad', 'Proveedor']];
+  const rows = [['Categoria', 'Marca', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Proveedor']];
   for (const group of groups) {
     for (const item of group.items) {
       rows.push([
         group.category.name,
+        item.product.brand || '',
+        item.product.line || '',
         item.product.name,
-        item.product.defaultUnit,
+        item.product.shadeCode || '',
+        item.product.format || '',
         item.totalQuantity,
         item.product.supplierName || '',
       ]);
@@ -369,13 +376,16 @@ function setupCatalogForms() {
   document.getElementById('productForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('productName').value.trim();
+    const brand = document.getElementById('productBrand').value.trim();
+    const line = document.getElementById('productLine').value.trim();
     const categoryId = document.getElementById('productCategory').value;
-    const defaultUnit = document.getElementById('productUnit').value.trim();
+    const shadeCode = document.getElementById('productShade').value.trim();
+    const format = document.getElementById('productFormat').value.trim();
     const supplierName = document.getElementById('productSupplier').value.trim();
-    if (!name || !categoryId) return;
-    await addProduct(profile.salonId, { name, categoryId, defaultUnit, supplierName });
+    const productCode = document.getElementById('productCode').value.trim();
+    if (!name || !brand || !categoryId) return;
+    await addProduct(profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode });
     e.target.reset();
-    document.getElementById('productUnit').value = 'unidad';
   });
 
   document.getElementById('bulkImportBtn').addEventListener('click', async () => {
@@ -404,9 +414,10 @@ function setupCatalogForms() {
 /**
  * Parsea un texto tipo:
  *   # Categoría
- *   Producto; unidad; proveedor
+ *   Producto; marca; línea; tono; formato; proveedor; código
  * y crea las categorías/productos que no existan todavía (compara nombres
- * sin importar mayúsculas/minúsculas para no duplicar categorías).
+ * sin importar mayúsculas/minúsculas para no duplicar categorías). Solo el
+ * nombre del producto es obligatorio; el resto se puede dejar vacío.
  */
 async function bulkImportCatalog(text) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -415,9 +426,9 @@ async function bulkImportCatalog(text) {
   let currentCategoryId = null;
   const created = { categories: 0, products: 0 };
 
-  for (const line of lines) {
-    if (line.startsWith('#')) {
-      const name = line.slice(1).trim();
+  for (const rawLine of lines) {
+    if (rawLine.startsWith('#')) {
+      const name = rawLine.slice(1).trim();
       if (!name) continue;
       const key = name.toLowerCase();
       if (categoryIdByName.has(key)) {
@@ -430,13 +441,18 @@ async function bulkImportCatalog(text) {
       }
     } else {
       if (!currentCategoryId) continue; // producto listado antes de cualquier "# Categoría": se ignora
-      const [name, unit, supplier] = line.split(';').map((s) => (s ? s.trim() : ''));
+      const parts = rawLine.split(';').map((s) => s.trim());
+      const [name, brand, productLine, shadeCode, format, supplierName, productCode] = parts;
       if (!name) continue;
       await addProduct(profile.salonId, {
         name,
         categoryId: currentCategoryId,
-        defaultUnit: unit || 'unidad',
-        supplierName: supplier || '',
+        brand: brand || '',
+        line: productLine || '',
+        shadeCode: shadeCode || '',
+        format: format || '',
+        supplierName: supplierName || '',
+        productCode: productCode || '',
       });
       created.products++;
     }
@@ -469,10 +485,18 @@ function renderProductList() {
   for (const p of products) {
     const row = document.createElement('div');
     row.className = 'list-row';
+    const metaParts = [
+      categoryById.get(p.categoryId)?.name || '—',
+      p.brand,
+      p.line,
+      p.shadeCode,
+      p.format,
+      p.supplierName,
+    ].filter(Boolean);
     row.innerHTML = `
       <div>
         <p class="list-row-title">${escapeHtml(p.name)}</p>
-        <p class="list-row-sub">${escapeHtml(categoryById.get(p.categoryId)?.name || '—')} · ${escapeHtml(p.defaultUnit)}${p.supplierName ? ' · ' + escapeHtml(p.supplierName) : ''}</p>
+        <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
       </div>
     `;
     const btn = document.createElement('button');

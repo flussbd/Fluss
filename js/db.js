@@ -40,9 +40,11 @@ const receivedRef = (salonId, orderId, productId) =>
 // productos siempre visibles, actualizados solos si el admin agrega algo).
 // ---------------------------------------------------------------------------
 export function listenCategories(salonId, cb) {
-  return onSnapshot(query(categoriesCol(salonId), orderBy('sortOrder')), (snap) =>
-    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-  );
+  return onSnapshot(categoriesCol(salonId), (snap) => {
+    const cats = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    cats.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
+    cb(cats);
+  });
 }
 
 export function listenProducts(salonId, cb) {
@@ -248,16 +250,16 @@ export async function createSalon(name, createdBy) {
 
 /** Compara dos productos por shadeCode (número de tono) y usa el nombre como desempate. */
 export function compareProductsByShade(a, b) {
+  // Nombre primero (con números incluidos comparados numéricamente: "5/0"
+  // antes que "10/1"), y el código de tono como desempate si dos productos
+  // tienen el mismo nombre.
+  const na = a?.name || '';
+  const nb = b?.name || '';
+  const nameCmp = na.localeCompare(nb, 'es', { numeric: true, sensitivity: 'base' });
+  if (nameCmp !== 0) return nameCmp;
   const ca = a?.shadeCode || '';
   const cb = b?.shadeCode || '';
-  if (ca && cb) {
-    const cmp = ca.localeCompare(cb, 'es', { numeric: true, sensitivity: 'base' });
-    if (cmp !== 0) return cmp;
-  } else if (Boolean(ca) !== Boolean(cb)) {
-    // Los que tienen tono definido van primero, los que no quedan al final.
-    return ca ? -1 : 1;
-  }
-  return (a?.name || '').localeCompare(b?.name || '', 'es', { sensitivity: 'base' });
+  return ca.localeCompare(cb, 'es', { numeric: true, sensitivity: 'base' });
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +310,7 @@ export function consolidateByProduct(items, products, categories, adjustments = 
 
   return categories
     .slice()
-    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }))
     .map((category) => ({
       category,
       items: (byCategory.get(category.id) || []).sort((a, b) => compareProductsByShade(a.product, b.product)),

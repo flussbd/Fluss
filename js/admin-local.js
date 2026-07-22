@@ -33,6 +33,7 @@ const STATUS_LABEL = {
 let user, profile;
 let categories = [];
 let products = [];
+let users = [];
 let order = null;
 let items = [];
 let adjustments = [];
@@ -92,7 +93,11 @@ async function init() {
   });
 
   listenCompletedOrders(profile.salonId, renderHistory);
-  listenUsersOfSalon(profile.salonId, renderUserList);
+  listenUsersOfSalon(profile.salonId, (list) => {
+    users = list;
+    renderUserList(list);
+    renderDashboard();
+  });
   listenInvitesOfSalon(profile.salonId, renderInviteList);
 }
 
@@ -230,11 +235,12 @@ function renderByUserView(userGroups) {
     return;
   }
   const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const userById = new Map(users.map((u) => [u.id, u]));
   for (const group of userGroups) {
     const wrap = document.createElement('div');
     wrap.className = 'user-group';
     const h3 = document.createElement('h3');
-    h3.textContent = group.userName;
+    h3.textContent = userById.get(group.userId)?.name || group.userName;
     wrap.appendChild(h3);
     const ul = document.createElement('ul');
     for (const it of group.items) {

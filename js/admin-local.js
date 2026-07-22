@@ -434,6 +434,32 @@ function buildProductSheetRows(flatItems, receivedByProduct) {
   return rows;
 }
 
+/**
+ * Crea la hoja a partir de las filas: les da a las columnas indicadas en
+ * `numericCols` (0-based) formato numérico sin decimales y con separador de
+ * miles, y ajusta el ancho de todas las columnas al contenido.
+ */
+function finalizeSheet(rows, numericCols) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  for (let r = 1; r < rows.length; r++) {
+    for (const c of numericCols) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      if (cell && typeof cell.v === 'number') cell.z = '#,##0';
+    }
+  }
+  ws['!cols'] = rows[0].map((_, c) => {
+    let max = 0;
+    for (const row of rows) {
+      const v = row[c];
+      const len = v === null || v === undefined ? 0 : String(v).length;
+      if (len > max) max = len;
+    }
+    return { wch: Math.min(Math.max(max + 2, 8), 42) };
+  });
+  return ws;
+}
+
 /** Nombre de hoja válido para Excel: máx. 31 caracteres, sin \ / ? * [ ] : y sin repetirse. */
 function sanitizeSheetName(name, used) {
   const base = String(name || 'Sin nombre').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Sin nombre';
@@ -468,7 +494,9 @@ function downloadOrderXlsx(
   const usedNames = new Set();
 
   const totalRows = buildProductSheetRows(flattenProductGroups(groups), receivedByProduct);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(totalRows), sanitizeSheetName('Total', usedNames));
+  // Columnas numéricas de la hoja Total/proveedor: Precio unitario, Pedido,
+  // Total, Recibido, Diferencia, Costo recibido (índices 7 a 12).
+  XLSX.utils.book_append_sheet(wb, finalizeSheet(totalRows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName('Total', usedNames));
 
   const userHeader = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Precio unitario', 'Total'];
   for (const u of userGroups) {
@@ -507,7 +535,8 @@ function downloadOrderXlsx(
       ]);
     }
     rows.push(['', '', '', '', '', 'TOTAL', totalQty, '', totalCost]);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sanitizeSheetName(u.userName, usedNames));
+    // Columnas numéricas de la hoja por usuario: Cantidad, Precio unitario, Total.
+    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6, 7, 8]), sanitizeSheetName(u.userName, usedNames));
   }
 
   XLSX.writeFile(wb, `pedido-${o.periodStart}-a-${o.periodEnd}.xlsx`);
@@ -541,7 +570,7 @@ function downloadOrderXlsxByProvider(
   const usedNames = new Set();
   for (const providerName of providerNames) {
     const rows = buildProductSheetRows(byProvider.get(providerName), receivedByProduct);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sanitizeSheetName(providerName, usedNames));
+    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName(providerName, usedNames));
   }
   XLSX.writeFile(wb, `pedido-por-proveedor-${o.periodStart}-a-${o.periodEnd}.xlsx`);
 }

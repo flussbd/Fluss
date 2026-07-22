@@ -165,6 +165,10 @@ export function deactivateProduct(salonId, productId) {
   return updateDoc(doc(productsCol(salonId), productId), { active: false });
 }
 
+export function updateUserName(uid, name) {
+  return updateDoc(doc(db, 'users', uid), { name });
+}
+
 export function createInvite(email, role, salonId, invitedBy) {
   return setDoc(doc(db, 'invites', email.toLowerCase()), {
     role,

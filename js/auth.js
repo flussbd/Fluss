@@ -13,6 +13,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendEmailVerification,
+  sendPasswordResetEmail,
   onAuthStateChanged,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
@@ -39,6 +40,11 @@ export async function signUpWithEmail(email, password) {
 
 export function loginWithEmail(email, password) {
   return signInWithEmailAndPassword(auth, email, password);
+}
+
+/** Manda el email de "restablecer contraseña" de Firebase a esa dirección. */
+export function resetPassword(email) {
+  return sendPasswordResetEmail(auth, email);
 }
 
 export function logout() {

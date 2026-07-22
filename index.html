@@ -36,6 +36,8 @@
       </form>
 
       <button id="toggleModeBtn" class="link-toggle">¿Primera vez? Crear cuenta con email</button>
+      <br />
+      <button id="forgotPasswordBtn" class="link-toggle">¿Olvidaste tu contraseña?</button>
 
       <p class="text-sm text-muted mt-4" id="hint">
         Para ingresar necesitás que un administrador te haya invitado antes con tu email.
@@ -45,16 +47,26 @@
 
   <script type="module">
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { auth, loginWithGoogle, loginWithEmail, signUpWithEmail, resolveProfile, homeForRole } from './js/auth.js';
+    import { auth, loginWithGoogle, loginWithEmail, signUpWithEmail, resetPassword, resolveProfile, homeForRole } from './js/auth.js';
 
     const alertBox = document.getElementById('alertBox');
     const googleBtn = document.getElementById('googleBtn');
     const emailForm = document.getElementById('emailForm');
     const submitBtn = document.getElementById('submitBtn');
     const toggleModeBtn = document.getElementById('toggleModeBtn');
+    const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
     let mode = 'login'; // 'login' | 'signup'
 
     function showError(message) {
+      alertBox.classList.remove('alert-info');
+      alertBox.classList.add('alert-error');
+      alertBox.textContent = message;
+      alertBox.classList.remove('hidden');
+    }
+
+    function showInfo(message) {
+      alertBox.classList.remove('alert-error');
+      alertBox.classList.add('alert-info');
       alertBox.textContent = message;
       alertBox.classList.remove('hidden');
     }
@@ -62,6 +74,21 @@
     function clearError() {
       alertBox.classList.add('hidden');
     }
+
+    forgotPasswordBtn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      if (!email) {
+        showError('Escribí tu email arriba y volvé a apretar "¿Olvidaste tu contraseña?".');
+        return;
+      }
+      try {
+        await resetPassword(email);
+        showInfo('Te enviamos un email para restablecer tu contraseña. Revisá tu bandeja (y spam).');
+      } catch (err) {
+        console.error(err);
+        showError('No pudimos enviar el email de recuperación. Revisá que el email esté bien escrito.');
+      }
+    });
 
     toggleModeBtn.addEventListener('click', () => {
       mode = mode === 'login' ? 'signup' : 'login';

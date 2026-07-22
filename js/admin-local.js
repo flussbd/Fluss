@@ -16,6 +16,7 @@ import {
   addProduct,
   deactivateProduct,
   createInvite,
+  updateUserName,
   consolidateByProduct,
   consolidateByUser,
 } from './db.js';
@@ -568,6 +569,17 @@ function renderUserList(users) {
       </div>
       <span class="pill">${u.role === 'local_admin' ? 'Admin local' : 'Básico'}</span>
     `;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-sm';
+    btn.textContent = 'Editar nombre';
+    btn.addEventListener('click', async () => {
+      const newName = prompt('Nuevo nombre para este usuario:', u.name);
+      if (newName === null) return;
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === u.name) return;
+      await updateUserName(u.id, trimmed);
+    });
+    row.appendChild(btn);
     container.appendChild(row);
   }
 }

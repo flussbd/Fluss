@@ -7,6 +7,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  getDocs,
   onSnapshot,
   query,
   where,
@@ -62,6 +63,18 @@ export function listenCurrentOrder(salonId, cb) {
 
 export function listenOrderItems(salonId, orderId, cb) {
   return onSnapshot(itemsCol(salonId, orderId), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+
+/** Trae una sola vez los ítems y ajustes de un pedido ya cerrado (para el detalle del historial). */
+export async function getOrderDetail(salonId, orderId) {
+  const [itemsSnap, adjustmentsSnap] = await Promise.all([
+    getDocs(itemsCol(salonId, orderId)),
+    getDocs(adjustmentsCol(salonId, orderId)),
+  ]);
+  return {
+    items: itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    adjustments: adjustmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+  };
 }
 
 export function listenAdjustments(salonId, orderId, cb) {

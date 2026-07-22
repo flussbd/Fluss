@@ -5,6 +5,7 @@ import {
   listenCurrentOrder,
   listenOrderItems,
   listenAdjustments,
+  getOrderDetail,
   listenCompletedOrders,
   listenUsersOfSalon,
   listenInvitesOfSalon,
@@ -609,16 +610,60 @@ function renderHistory(orders) {
     container.innerHTML = '<div class="empty-state">Todavía no hay períodos archivados.</div>';
     return;
   }
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+
   for (const o of orders) {
     const row = document.createElement('div');
-    row.className = 'list-row';
+    row.className = 'consolidated-row';
     const closedDate = o.closedAt?.toDate ? o.closedAt.toDate().toLocaleDateString('es') : '—';
     row.innerHTML = `
-      <div>
-        <p class="list-row-title">${escapeHtml(formatPeriod(o))}</p>
-        <p class="list-row-sub">Cerrado el ${closedDate}</p>
+      <div class="consolidated-row-head">
+        <div>
+          <p class="product-name">${escapeHtml(formatPeriod(o))}</p>
+          <p class="product-meta">Cerrado el ${escapeHtml(closedDate)}</p>
+        </div>
+        <span class="chevron">▾</span>
       </div>
+      <div class="consolidated-row-detail"></div>
     `;
+
+    const head = row.querySelector('.consolidated-row-head');
+    const detail = row.querySelector('.consolidated-row-detail');
+    let loaded = false;
+
+    head.addEventListener('click', async () => {
+      row.classList.toggle('expanded');
+      if (!row.classList.contains('expanded') || loaded) return;
+      loaded = true;
+      detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
+      try {
+        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(profile.salonId, o.id);
+        const groups = consolidateByProduct(histItems, products, categories, histAdjustments);
+        detail.innerHTML = '';
+        if (groups.length === 0) {
+          detail.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
+          return;
+        }
+        for (const group of groups) {
+          const catTitle = document.createElement('p');
+          catTitle.className = 'text-sm';
+          catTitle.style.fontWeight = '600';
+          catTitle.style.marginTop = '10px';
+          catTitle.textContent = categoryById.get(group.category.id)?.name || group.category.name;
+          detail.appendChild(catTitle);
+          for (const item of group.items) {
+            const line = document.createElement('div');
+            const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
+            line.innerHTML = `<span>${escapeHtml(item.product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}</span><span>${item.totalQuantity} unidades</span>`;
+            detail.appendChild(line);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        detail.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el detalle. Revisá la consola (F12).</p>';
+      }
+    });
+
     container.appendChild(row);
   }
 }

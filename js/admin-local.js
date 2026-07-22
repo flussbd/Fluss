@@ -164,6 +164,7 @@ function renderActionsBar() {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
     bar.appendChild(makeButton('Descargar Excel', 'btn-secondary', () => downloadOrderXlsx()));
+    bar.appendChild(makeButton('Descargar por proveedor', 'btn-secondary', () => downloadOrderXlsxByProvider()));
     bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
@@ -341,20 +342,37 @@ function downloadOrderTxt(o = order, groups = consolidateByProduct(items, produc
   downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.txt`, lines.join('\n'), 'text/plain');
 }
 
+const collateEs = (a, b) => (a || '').localeCompare(b || '', 'es', { numeric: true, sensitivity: 'base' });
+
 /**
- * Genera un .xlsx real (vía SheetJS, cargado como script global en admin-local.html)
- * con el pedido consolidado: precio, cantidad pedida/ajustada, cantidad recibida
- * (si ya se cargó en el Historial) y la diferencia entre ambas.
+ * Aplana los grupos por categoría en una lista de productos (uno por
+ * producto), ordenada por marca, categoría, línea, producto, tono y formato.
  */
-function downloadOrderXlsx(
-  o = order,
-  groups = consolidateByProduct(items, products, categories, adjustments),
-  receivedByProduct = new Map()
-) {
-  if (typeof XLSX === 'undefined') {
-    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
-    return;
+function flattenProductGroups(groups) {
+  const flat = [];
+  for (const group of groups) {
+    for (const item of group.items) {
+      flat.push({ product: item.product, categoryName: group.category.name, totalQuantity: item.totalQuantity });
+    }
   }
+  flat.sort(
+    (a, b) =>
+      collateEs(a.product.brand, b.product.brand) ||
+      collateEs(a.categoryName, b.categoryName) ||
+      collateEs(a.product.line, b.product.line) ||
+      collateEs(a.product.name, b.product.name) ||
+      collateEs(a.product.shadeCode, b.product.shadeCode) ||
+      collateEs(a.product.format, b.product.format)
+  );
+  return flat;
+}
+
+/**
+ * Arma las filas (header + datos + fila de totales) del detalle de
+ * productos: precio, cantidad pedida, total, cantidad recibida (si ya se
+ * cargó en el Historial) y la diferencia/costo entre ambas.
+ */
+function buildProductSheetRows(flatItems, receivedByProduct) {
   const header = [
     'Marca',
     'Categoria',
@@ -376,68 +394,156 @@ function downloadOrderXlsx(
   let totalRecibido = 0;
   let totalCosto = 0;
 
-  // Aplanamos todos los productos de todas las categorías y los ordenamos
-  // por marca, categoría, línea, producto, tono y formato (en ese orden).
-  const flat = [];
-  for (const group of groups) {
-    for (const item of group.items) {
-      flat.push({ item, categoryName: group.category.name });
-    }
-  }
-  const collate = (a, b) => (a || '').localeCompare(b || '', 'es', { numeric: true, sensitivity: 'base' });
-  flat.sort((a, b) => {
-    return (
-      collate(a.item.product.brand, b.item.product.brand) ||
-      collate(a.categoryName, b.categoryName) ||
-      collate(a.item.product.line, b.item.product.line) ||
-      collate(a.item.product.name, b.item.product.name) ||
-      collate(a.item.product.shadeCode, b.item.product.shadeCode) ||
-      collate(a.item.product.format, b.item.product.format)
-    );
-  });
-
-  for (const { item, categoryName } of flat) {
-    const received = receivedByProduct.get(item.product.id);
+  for (const { product, categoryName, totalQuantity } of flatItems) {
+    const received = receivedByProduct.get(product.id);
     const hasReceived = !!received && typeof received.receivedQuantity === 'number';
     const receivedRaw = hasReceived ? received.receivedQuantity : null;
     // Si ya se registró la recepción, usamos el precio "congelado" en ese
     // momento (no el precio actual del producto, que puede haber cambiado).
     const price = hasReceived && typeof received.unitPrice === 'number'
       ? received.unitPrice
-      : typeof item.product.price === 'number'
-        ? item.product.price
+      : typeof product.price === 'number'
+        ? product.price
         : null;
-    const total = price !== null ? item.totalQuantity * price : '';
+    const total = price !== null ? totalQuantity * price : '';
     const cost = hasReceived && price !== null ? receivedRaw * price : '';
 
-    totalPedido += item.totalQuantity;
+    totalPedido += totalQuantity;
     if (typeof total === 'number') totalTotal += total;
     if (hasReceived) totalRecibido += receivedRaw;
     if (typeof cost === 'number') totalCosto += cost;
 
     rows.push([
-      item.product.brand || '',
+      product.brand || '',
       categoryName,
-      item.product.line || '',
-      item.product.name,
-      item.product.shadeCode || '',
-      item.product.format || '',
-      item.product.supplierName || '',
+      product.line || '',
+      product.name,
+      product.shadeCode || '',
+      product.format || '',
+      product.supplierName || '',
       price !== null ? price : '',
-      item.totalQuantity,
+      totalQuantity,
       total,
       hasReceived ? receivedRaw : '',
-      hasReceived ? receivedRaw - item.totalQuantity : '',
+      hasReceived ? receivedRaw - totalQuantity : '',
       cost,
     ]);
   }
 
   rows.push(['', '', '', '', '', '', '', 'TOTAL', totalPedido, totalTotal, totalRecibido, totalRecibido - totalPedido, totalCosto]);
+  return rows;
+}
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+/** Nombre de hoja válido para Excel: máx. 31 caracteres, sin \ / ? * [ ] : y sin repetirse. */
+function sanitizeSheetName(name, used) {
+  const base = String(name || 'Sin nombre').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Sin nombre';
+  let candidate = base;
+  let i = 2;
+  while (used.has(candidate.toLowerCase())) {
+    const suffix = ` (${i})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+    i++;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/**
+ * Genera un .xlsx real (vía SheetJS, cargado como script global en admin-local.html)
+ * con una hoja "Total" (consolidado por producto) y una hoja adicional por
+ * cada persona del equipo, con lo que esa persona pidió.
+ */
+function downloadOrderXlsx(
+  o = order,
+  groups = consolidateByProduct(items, products, categories, adjustments),
+  receivedByProduct = new Map(),
+  userGroups = consolidateByUser(items, products),
+  categoryById = new Map(categories.map((c) => [c.id, c]))
+) {
+  if (typeof XLSX === 'undefined') {
+    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
+    return;
+  }
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Pedido');
+  const usedNames = new Set();
+
+  const totalRows = buildProductSheetRows(flattenProductGroups(groups), receivedByProduct);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(totalRows), sanitizeSheetName('Total', usedNames));
+
+  const userHeader = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Precio unitario', 'Total'];
+  for (const u of userGroups) {
+    const sorted = u.items.slice().sort(
+      (a, b) =>
+        collateEs(a.product.brand, b.product.brand) ||
+        collateEs(categoryById.get(a.product.categoryId)?.name, categoryById.get(b.product.categoryId)?.name) ||
+        collateEs(a.product.line, b.product.line) ||
+        collateEs(a.product.name, b.product.name) ||
+        collateEs(a.product.shadeCode, b.product.shadeCode) ||
+        collateEs(a.product.format, b.product.format)
+    );
+    const rows = [userHeader];
+    let totalQty = 0;
+    let totalCost = 0;
+    for (const { product, quantity } of sorted) {
+      const received = receivedByProduct.get(product.id);
+      const price = received && typeof received.unitPrice === 'number'
+        ? received.unitPrice
+        : typeof product.price === 'number'
+          ? product.price
+          : null;
+      const total = price !== null ? quantity * price : '';
+      totalQty += quantity;
+      if (typeof total === 'number') totalCost += total;
+      rows.push([
+        product.brand || '',
+        categoryById.get(product.categoryId)?.name || '',
+        product.line || '',
+        product.name,
+        product.shadeCode || '',
+        product.format || '',
+        quantity,
+        price !== null ? price : '',
+        total,
+      ]);
+    }
+    rows.push(['', '', '', '', '', 'TOTAL', totalQty, '', totalCost]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sanitizeSheetName(u.userName, usedNames));
+  }
+
   XLSX.writeFile(wb, `pedido-${o.periodStart}-a-${o.periodEnd}.xlsx`);
+}
+
+/**
+ * Genera un .xlsx con una hoja por proveedor (y "Sin proveedor" si aplica),
+ * cada una con el mismo detalle que la hoja Total pero filtrado a ese
+ * proveedor: útil para mandarle a cada proveedor solo lo suyo.
+ */
+function downloadOrderXlsxByProvider(
+  o = order,
+  groups = consolidateByProduct(items, products, categories, adjustments),
+  receivedByProduct = new Map()
+) {
+  if (typeof XLSX === 'undefined') {
+    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
+    return;
+  }
+  const flat = flattenProductGroups(groups);
+  const byProvider = new Map();
+  for (const entry of flat) {
+    const key = entry.product.supplierName || 'Sin proveedor';
+    const list = byProvider.get(key) || [];
+    list.push(entry);
+    byProvider.set(key, list);
+  }
+  const providerNames = Array.from(byProvider.keys()).sort((a, b) => collateEs(a, b));
+
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  for (const providerName of providerNames) {
+    const rows = buildProductSheetRows(byProvider.get(providerName), receivedByProduct);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sanitizeSheetName(providerName, usedNames));
+  }
+  XLSX.writeFile(wb, `pedido-por-proveedor-${o.periodStart}-a-${o.periodEnd}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
@@ -888,10 +994,19 @@ function renderHistory(orders) {
         btnXlsx.textContent = 'Descargar Excel';
         btnXlsx.addEventListener('click', (e) => {
           e.stopPropagation();
-          downloadOrderXlsx(o, productGroups, receivedByProduct);
+          downloadOrderXlsx(o, productGroups, receivedByProduct, userGroups, categoryById);
+        });
+        const btnXlsxProvider = document.createElement('button');
+        btnXlsxProvider.type = 'button';
+        btnXlsxProvider.className = 'btn btn-ghost btn-sm';
+        btnXlsxProvider.textContent = 'Descargar por proveedor';
+        btnXlsxProvider.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadOrderXlsxByProvider(o, productGroups, receivedByProduct);
         });
         downloadWrap.appendChild(btnTxt);
         downloadWrap.appendChild(btnXlsx);
+        downloadWrap.appendChild(btnXlsxProvider);
 
         topBar.appendChild(switchWrap);
         topBar.appendChild(downloadWrap);

@@ -192,6 +192,54 @@ Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml;; 3800</pre>
     </div>
   </div>
 
+  <!-- Modal: editar producto -->
+  <div id="productEditModal" class="modal-overlay no-print" hidden>
+    <div class="modal" style="max-width: 460px;">
+      <h2>Editar producto</h2>
+      <p>Modificá los datos y guardá los cambios.</p>
+      <div class="field">
+        <label>Nombre del producto</label>
+        <input class="input" id="editProductName" required />
+      </div>
+      <div class="field">
+        <label>Marca</label>
+        <input class="input" id="editProductBrand" required />
+      </div>
+      <div class="field">
+        <label>Línea (opcional)</label>
+        <input class="input" id="editProductLine" />
+      </div>
+      <div class="field">
+        <label>Categoría</label>
+        <select class="input" id="editProductCategory" required></select>
+      </div>
+      <div class="field">
+        <label>Tono / código (opcional)</label>
+        <input class="input" id="editProductShade" />
+      </div>
+      <div class="field">
+        <label>Formato / volumen (opcional)</label>
+        <input class="input" id="editProductFormat" />
+      </div>
+      <div class="field">
+        <label>Proveedor (opcional)</label>
+        <input class="input" id="editProductSupplier" />
+      </div>
+      <div class="field">
+        <label>Código interno (opcional)</label>
+        <input class="input" id="editProductCode" />
+      </div>
+      <div class="field">
+        <label>Precio (opcional)</label>
+        <input class="input" id="editProductPrice" type="number" min="0" step="0.01" />
+      </div>
+      <div class="modal-actions">
+        <button id="productEditCancelBtn" class="btn btn-secondary">Cancelar</button>
+        <button id="productEditSaveBtn" class="btn btn-primary">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <template id="consolidatedRowTemplate">
     <div class="consolidated-row">
       <div class="consolidated-row-head">

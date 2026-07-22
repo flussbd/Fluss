@@ -15,9 +15,9 @@ import {
   setAdjustment,
   addCategory,
   addProduct,
+  updateProduct,
   deactivateProduct,
   activateProduct,
-  updateProductPrice,
   setReceivedQuantity,
   createInvite,
   updateUserName,
@@ -60,6 +60,7 @@ async function init() {
   setupNav();
   setupPeriodModal();
   setupCatalogForms();
+  setupProductEditModal();
   setupInviteForm();
 
   const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
@@ -410,6 +411,86 @@ function downloadOrderXlsx(
 }
 
 // ---------------------------------------------------------------------------
+// Modal: editar producto (todos los campos, no solo el precio)
+// ---------------------------------------------------------------------------
+function setupProductEditModal() {
+  const modal = document.getElementById('productEditModal');
+
+  document.getElementById('productEditCancelBtn').addEventListener('click', () => {
+    modal.hidden = true;
+  });
+
+  document.getElementById('productEditSaveBtn').addEventListener('click', async () => {
+    const productId = modal.dataset.productId;
+    if (!productId) return;
+
+    const name = document.getElementById('editProductName').value.trim();
+    const brand = document.getElementById('editProductBrand').value.trim();
+    const line = document.getElementById('editProductLine').value.trim();
+    const categoryId = document.getElementById('editProductCategory').value;
+    const shadeCode = document.getElementById('editProductShade').value.trim();
+    const format = document.getElementById('editProductFormat').value.trim();
+    const supplierName = document.getElementById('editProductSupplier').value.trim();
+    const productCode = document.getElementById('editProductCode').value.trim();
+    const priceRaw = document.getElementById('editProductPrice').value.trim();
+    const price = priceRaw ? Number(priceRaw) : null;
+
+    if (!name || !brand || !categoryId) {
+      alert('Completá al menos nombre, marca y categoría.');
+      return;
+    }
+    if (priceRaw && Number.isNaN(price)) {
+      alert('Ingresá un precio válido.');
+      return;
+    }
+
+    try {
+      await updateProduct(profile.salonId, productId, {
+        name,
+        categoryId,
+        brand,
+        line,
+        shadeCode,
+        format,
+        supplierName,
+        productCode,
+        price,
+      });
+      modal.hidden = true;
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo guardar el producto. Probá de nuevo.');
+    }
+  });
+}
+
+function openProductEditModal(p) {
+  const modal = document.getElementById('productEditModal');
+  modal.dataset.productId = p.id;
+
+  document.getElementById('editProductName').value = p.name || '';
+  document.getElementById('editProductBrand').value = p.brand || '';
+  document.getElementById('editProductLine').value = p.line || '';
+  document.getElementById('editProductShade').value = p.shadeCode || '';
+  document.getElementById('editProductFormat').value = p.format || '';
+  document.getElementById('editProductSupplier').value = p.supplierName || '';
+  document.getElementById('editProductCode').value = p.productCode || '';
+  document.getElementById('editProductPrice').value = typeof p.price === 'number' ? p.price : '';
+
+  const select = document.getElementById('editProductCategory');
+  select.innerHTML = '';
+  for (const c of categories) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    select.appendChild(opt);
+  }
+  select.value = p.categoryId;
+
+  modal.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
 // Catálogo
 // ---------------------------------------------------------------------------
 function setupCatalogForms() {
@@ -583,22 +664,11 @@ function buildProductRow(p, categoryById, isInactive) {
   actions.style.display = 'flex';
   actions.style.gap = '6px';
 
-  const priceBtn = document.createElement('button');
-  priceBtn.className = 'btn btn-ghost btn-sm';
-  priceBtn.textContent = 'Editar precio';
-  priceBtn.addEventListener('click', async () => {
-    const current = typeof p.price === 'number' ? String(p.price) : '';
-    const input = prompt(`Precio para "${p.name}":`, current);
-    if (input === null) return;
-    const trimmed = input.trim();
-    const price = trimmed ? Number(trimmed) : null;
-    if (trimmed && Number.isNaN(price)) {
-      alert('Ingresá un número válido.');
-      return;
-    }
-    await updateProductPrice(profile.salonId, p.id, price);
-  });
-  actions.appendChild(priceBtn);
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn btn-ghost btn-sm';
+  editBtn.textContent = 'Editar';
+  editBtn.addEventListener('click', () => openProductEditModal(p));
+  actions.appendChild(editBtn);
 
   const btn = document.createElement('button');
   btn.className = 'btn btn-ghost btn-sm';

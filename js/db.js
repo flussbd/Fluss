@@ -224,6 +224,21 @@ export function updateProductPrice(salonId, productId, price) {
   });
 }
 
+/** Edición completa: el admin puede tocar cualquier campo de un producto ya cargado. */
+export function updateProduct(salonId, productId, { name, categoryId, brand, line, shadeCode, format, supplierName, productCode, price }) {
+  return updateDoc(doc(productsCol(salonId), productId), {
+    name,
+    categoryId,
+    brand: brand || '',
+    line: line || '',
+    shadeCode: shadeCode || '',
+    format: format || '',
+    supplierName: supplierName || '',
+    productCode: productCode || '',
+    price: typeof price === 'number' && !Number.isNaN(price) ? price : null,
+  });
+}
+
 export function updateUserName(uid, name) {
   return updateDoc(doc(db, 'users', uid), { name });
 }

@@ -1,7 +1,7 @@
 import { requireRole, logout } from './auth.js';
 import {
   listenCategories,
-  listenProducts,
+  listenAllProducts,
   listenCurrentOrder,
   listenOrderItems,
   listenAdjustments,
@@ -15,6 +15,7 @@ import {
   addCategory,
   addProduct,
   deactivateProduct,
+  activateProduct,
   createInvite,
   updateUserName,
   consolidateByProduct,
@@ -65,7 +66,7 @@ async function init() {
     renderDashboard();
   });
 
-  listenProducts(profile.salonId, (prods) => {
+  listenAllProducts(profile.salonId, (prods) => {
     products = prods;
     renderProductList();
     renderDashboard();
@@ -479,36 +480,62 @@ function renderProductList() {
   const container = document.getElementById('productList');
   container.innerHTML = '';
   const categoryById = new Map(categories.map((c) => [c.id, c]));
+
   if (products.length === 0) {
     container.innerHTML = '<div class="empty-state">Todavía no cargaste productos.</div>';
     return;
   }
-  for (const p of products) {
-    const row = document.createElement('div');
-    row.className = 'list-row';
-    const metaParts = [
-      categoryById.get(p.categoryId)?.name || '—',
-      p.brand,
-      p.line,
-      p.shadeCode,
-      p.format,
-      p.supplierName,
-    ].filter(Boolean);
-    row.innerHTML = `
-      <div>
-        <p class="list-row-title">${escapeHtml(p.name)}</p>
-        <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
-      </div>
-    `;
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-ghost btn-sm';
+
+  const activeProducts = products.filter((p) => p.active);
+  const inactiveProducts = products.filter((p) => !p.active);
+
+  if (activeProducts.length === 0) {
+    container.innerHTML = '<div class="empty-state">No hay productos activos.</div>';
+  } else {
+    for (const p of activeProducts) container.appendChild(buildProductRow(p, categoryById, false));
+  }
+
+  if (inactiveProducts.length > 0) {
+    const title = document.createElement('h2');
+    title.className = 'category-title';
+    title.textContent = 'Productos desactivados';
+    container.appendChild(title);
+    for (const p of inactiveProducts) container.appendChild(buildProductRow(p, categoryById, true));
+  }
+}
+
+function buildProductRow(p, categoryById, isInactive) {
+  const row = document.createElement('div');
+  row.className = 'list-row';
+  const metaParts = [
+    categoryById.get(p.categoryId)?.name || '—',
+    p.brand,
+    p.line,
+    p.shadeCode,
+    p.format,
+    p.supplierName,
+  ].filter(Boolean);
+  row.innerHTML = `
+    <div>
+      <p class="list-row-title">${escapeHtml(p.name)}</p>
+      <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
+    </div>
+  `;
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-ghost btn-sm';
+  if (isInactive) {
+    btn.textContent = 'Reactivar';
+    btn.addEventListener('click', async () => {
+      await activateProduct(profile.salonId, p.id);
+    });
+  } else {
     btn.textContent = 'Desactivar';
     btn.addEventListener('click', async () => {
       if (confirm(`¿Quitar "${p.name}" del catálogo?`)) await deactivateProduct(profile.salonId, p.id);
     });
-    row.appendChild(btn);
-    container.appendChild(row);
   }
+  row.appendChild(btn);
+  return row;
 }
 
 // ---------------------------------------------------------------------------

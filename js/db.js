@@ -46,6 +46,11 @@ export function listenProducts(salonId, cb) {
   );
 }
 
+/** Todos los productos (activos e inactivos) — para el panel de Catálogo del admin. */
+export function listenAllProducts(salonId, cb) {
+  return onSnapshot(productsCol(salonId), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+
 /** Pedido "actual" = el único en draft o reviewing. Si no hay ninguno, cb(null). */
 export function listenCurrentOrder(salonId, cb) {
   return onSnapshot(query(ordersCol(salonId), where('status', 'in', ['draft', 'reviewing'])), (snap) => {
@@ -163,6 +168,10 @@ export function addProduct(salonId, { name, categoryId, brand, line, shadeCode, 
 
 export function deactivateProduct(salonId, productId) {
   return updateDoc(doc(productsCol(salonId), productId), { active: false });
+}
+
+export function activateProduct(salonId, productId) {
+  return updateDoc(doc(productsCol(salonId), productId), { active: true });
 }
 
 export function updateUserName(uid, name) {

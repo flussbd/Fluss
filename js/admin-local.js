@@ -611,6 +611,7 @@ function renderHistory(orders) {
     return;
   }
   const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const userById = new Map(users.map((u) => [u.id, u]));
 
   for (const o of orders) {
     const row = document.createElement('div');
@@ -638,26 +639,47 @@ function renderHistory(orders) {
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
         const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(profile.salonId, o.id);
-        const groups = consolidateByProduct(histItems, products, categories, histAdjustments);
+        const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
+        const userGroups = consolidateByUser(histItems, products);
         detail.innerHTML = '';
-        if (groups.length === 0) {
-          detail.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
-          return;
-        }
-        for (const group of groups) {
-          const catTitle = document.createElement('p');
-          catTitle.className = 'text-sm';
-          catTitle.style.fontWeight = '600';
-          catTitle.style.marginTop = '10px';
-          catTitle.textContent = categoryById.get(group.category.id)?.name || group.category.name;
-          detail.appendChild(catTitle);
-          for (const item of group.items) {
-            const line = document.createElement('div');
-            const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
-            line.innerHTML = `<span>${escapeHtml(item.product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}</span><span>${item.totalQuantity} unidades</span>`;
-            detail.appendChild(line);
-          }
-        }
+
+        const switchWrap = document.createElement('section');
+        switchWrap.className = 'view-switch';
+        switchWrap.style.marginBottom = '10px';
+        const btnTotal = document.createElement('button');
+        btnTotal.type = 'button';
+        btnTotal.textContent = 'Total';
+        btnTotal.className = 'active';
+        const btnUser = document.createElement('button');
+        btnUser.type = 'button';
+        btnUser.textContent = 'Por usuario';
+        switchWrap.appendChild(btnTotal);
+        switchWrap.appendChild(btnUser);
+        detail.appendChild(switchWrap);
+
+        const productSection = document.createElement('section');
+        const userSection = document.createElement('section');
+        userSection.classList.add('hidden');
+        detail.appendChild(productSection);
+        detail.appendChild(userSection);
+
+        renderHistProductView(productSection, productGroups, categoryById);
+        renderHistUserView(userSection, userGroups, categoryById, userById);
+
+        btnTotal.addEventListener('click', (e) => {
+          e.stopPropagation();
+          btnTotal.classList.add('active');
+          btnUser.classList.remove('active');
+          productSection.classList.remove('hidden');
+          userSection.classList.add('hidden');
+        });
+        btnUser.addEventListener('click', (e) => {
+          e.stopPropagation();
+          btnUser.classList.add('active');
+          btnTotal.classList.remove('active');
+          userSection.classList.remove('hidden');
+          productSection.classList.add('hidden');
+        });
       } catch (err) {
         console.error(err);
         detail.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el detalle. Revisá la consola (F12).</p>';
@@ -665,6 +687,53 @@ function renderHistory(orders) {
     });
 
     container.appendChild(row);
+  }
+}
+
+function renderHistProductView(container, groups, categoryById) {
+  container.innerHTML = '';
+  if (groups.length === 0) {
+    container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
+    return;
+  }
+  for (const group of groups) {
+    const catTitle = document.createElement('p');
+    catTitle.className = 'text-sm';
+    catTitle.style.fontWeight = '600';
+    catTitle.style.marginTop = '10px';
+    catTitle.textContent = categoryById.get(group.category.id)?.name || group.category.name;
+    container.appendChild(catTitle);
+    for (const item of group.items) {
+      const line = document.createElement('div');
+      const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
+      line.innerHTML = `<span>${escapeHtml(item.product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}</span><span>${item.totalQuantity} unidades</span>`;
+      container.appendChild(line);
+    }
+  }
+}
+
+function renderHistUserView(container, userGroups, categoryById, userById) {
+  container.innerHTML = '';
+  if (userGroups.length === 0) {
+    container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
+    return;
+  }
+  for (const group of userGroups) {
+    const userTitle = document.createElement('p');
+    userTitle.className = 'text-sm';
+    userTitle.style.fontWeight = '600';
+    userTitle.style.marginTop = '10px';
+    userTitle.textContent = userById.get(group.userId)?.name || group.userName;
+    container.appendChild(userTitle);
+    for (const it of group.items) {
+      const line = document.createElement('div');
+      const noteSuffix = it.notes ? ` — ${it.notes}` : '';
+      const label = [categoryById.get(it.product.categoryId)?.name, it.product.brand, it.product.name]
+        .filter(Boolean)
+        .join(' · ');
+      line.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
+      container.appendChild(line);
+    }
   }
 }
 

@@ -907,6 +907,10 @@ h1, h2, h3 {
   .main-narrow {
     max-width: 560px;
   }
+
+  .bottom-nav-inner {
+    max-width: 560px;
+  }
 }
 
 /* Teléfono: el header con pestañas (Pedido actual/Catálogo/Equipo/Historial)

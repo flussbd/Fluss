@@ -30,6 +30,7 @@ const itemRef = (salonId, orderId, uid, productId) =>
 const adjustmentsCol = (salonId, orderId) => collection(db, 'salons', salonId, 'orders', orderId, 'adjustments');
 const adjustmentRef = (salonId, orderId, productId) =>
   doc(db, 'salons', salonId, 'orders', orderId, 'adjustments', productId);
+const submissionRef = (salonId, orderId, uid) => doc(db, 'salons', salonId, 'orders', orderId, 'submissions', uid);
 
 // ---------------------------------------------------------------------------
 // Suscripciones en tiempo real (catálogo se ve "sin escribir": categorías +
@@ -127,6 +128,19 @@ export async function setMyItem(salonId, orderId, uid, userName, productId, quan
   });
 }
 
+/** Existe o no un doc en submissions/{uid}: existe = esa persona ya "cerró" su pedido. */
+export function listenMySubmission(salonId, orderId, uid, cb) {
+  return onSnapshot(submissionRef(salonId, orderId, uid), (snap) => cb(snap.exists() ? snap.data() : null));
+}
+
+export function submitMyOrder(salonId, orderId, uid) {
+  return setDoc(submissionRef(salonId, orderId, uid), { submittedAt: serverTimestamp() });
+}
+
+export function unsubmitMyOrder(salonId, orderId, uid) {
+  return deleteDoc(submissionRef(salonId, orderId, uid));
+}
+
 // ---------------------------------------------------------------------------
 // Escrituras — administrador local
 // ---------------------------------------------------------------------------
@@ -208,6 +222,24 @@ export async function createSalon(name, createdBy) {
 }
 
 // ---------------------------------------------------------------------------
+// Orden "natural" por tono/código (ej: 5/0, 7NN, 10GI) en vez de alfabético.
+// ---------------------------------------------------------------------------
+
+/** Compara dos productos por shadeCode (número de tono) y usa el nombre como desempate. */
+export function compareProductsByShade(a, b) {
+  const ca = a?.shadeCode || '';
+  const cb = b?.shadeCode || '';
+  if (ca && cb) {
+    const cmp = ca.localeCompare(cb, 'es', { numeric: true, sensitivity: 'base' });
+    if (cmp !== 0) return cmp;
+  } else if (Boolean(ca) !== Boolean(cb)) {
+    // Los que tienen tono definido van primero, los que no quedan al final.
+    return ca ? -1 : 1;
+  }
+  return (a?.name || '').localeCompare(b?.name || '', 'es', { sensitivity: 'base' });
+}
+
+// ---------------------------------------------------------------------------
 // Consolidación (funciones puras, sin dependencia de Firestore)
 // ---------------------------------------------------------------------------
 
@@ -258,7 +290,7 @@ export function consolidateByProduct(items, products, categories, adjustments = 
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((category) => ({
       category,
-      items: (byCategory.get(category.id) || []).sort((a, b) => a.product.name.localeCompare(b.product.name)),
+      items: (byCategory.get(category.id) || []).sort((a, b) => compareProductsByShade(a.product, b.product)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -275,6 +307,6 @@ export function consolidateByUser(items, products) {
     byUser.set(item.userId, entry);
   }
   return Array.from(byUser.values())
-    .map((u) => ({ ...u, items: u.items.sort((a, b) => a.product.name.localeCompare(b.product.name)) }))
+    .map((u) => ({ ...u, items: u.items.sort((a, b) => compareProductsByShade(a.product, b.product)) }))
     .sort((a, b) => a.userName.localeCompare(b.userName));
 }

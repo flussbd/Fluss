@@ -21,6 +21,7 @@ import {
   updateUserName,
   consolidateByProduct,
   consolidateByUser,
+  compareProductsByShade,
 } from './db.js';
 import { doc, getDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
@@ -91,6 +92,7 @@ async function init() {
       });
     }
     renderDashboard();
+    maybeAutoCloseDraft();
   });
 
   listenCompletedOrders(profile.salonId, renderHistory);
@@ -285,6 +287,20 @@ function setupPeriodModal() {
   });
 }
 
+// Cierre automático del período de solicitud: como Fluss no tiene servidor
+// propio (solo Firestore + hosting estático), esto se revisa cada vez que el
+// admin abre su panel — si ya pasó la fecha de fin y el pedido sigue en
+// borrador, se cierra solo (mismo efecto que el botón manual). No archiva ni
+// envía el pedido: eso sigue siendo una acción manual del admin.
+function maybeAutoCloseDraft() {
+  if (!order || order.status !== 'draft' || !order.periodEnd) return;
+  const endOfPeriod = new Date(`${order.periodEnd}T23:59:59`);
+  if (Number.isNaN(endOfPeriod.getTime())) return;
+  if (new Date() > endOfPeriod) {
+    startReview(profile.salonId, order.id).catch(console.error);
+  }
+}
+
 async function handleCloseFortnight() {
   if (!confirm('¿Cerrar este período y archivarlo? Esta acción no se puede deshacer.')) return;
   await closeOrder(profile.salonId, order.id, user.uid);
@@ -473,8 +489,8 @@ function renderProductList() {
     return;
   }
 
-  const activeProducts = products.filter((p) => p.active);
-  const inactiveProducts = products.filter((p) => !p.active);
+  const activeProducts = products.filter((p) => p.active).sort(compareProductsByShade);
+  const inactiveProducts = products.filter((p) => !p.active).sort(compareProductsByShade);
 
   if (activeProducts.length === 0) {
     container.innerHTML = '<div class="empty-state">No hay productos activos.</div>';

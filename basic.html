@@ -26,6 +26,7 @@
           Mi pedido
           <span id="myOrderBadge" class="bottom-nav-badge hidden">0</span>
         </button>
+        <button id="navHistory" class="bottom-nav-btn">Historial</button>
       </div>
     </nav>
 
@@ -57,11 +58,21 @@
 
       <!-- Vista Mi pedido -->
       <div id="myOrderView" class="hidden mt-4">
+        <div id="submitBar" class="card hidden" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+          <p id="submitStatus" class="text-sm text-muted"></p>
+          <button id="submitOrderBtn" class="btn btn-secondary btn-sm"></button>
+        </div>
         <h2 class="category-title" style="margin-top:0;">Mi pedido del período</h2>
         <div id="myOrderGrid" class="product-grid"></div>
         <div id="emptyMyOrder" class="empty-state hidden">
           Todavía no agregaste insumos. Andá al catálogo para empezar.
         </div>
+      </div>
+
+      <!-- Vista Historial -->
+      <div id="historyView" class="hidden mt-4">
+        <div id="myHistoryList"></div>
+        <div id="emptyMyHistory" class="empty-state hidden">Todavía no tenés pedidos de períodos anteriores.</div>
       </div>
     </main>
   </div>

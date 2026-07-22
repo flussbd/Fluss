@@ -1,5 +1,18 @@
 import { requireRole, logout } from './auth.js';
-import { listenCategories, listenProducts, listenCurrentOrder, listenOrderItems, setMyItem } from './db.js';
+import {
+  listenCategories,
+  listenProducts,
+  listenAllProducts,
+  listenCurrentOrder,
+  listenOrderItems,
+  listenCompletedOrders,
+  listenMySubmission,
+  submitMyOrder,
+  unsubmitMyOrder,
+  getOrderDetail,
+  setMyItem,
+  compareProductsByShade,
+} from './db.js';
 
 const STATUS_LABEL = {
   draft: 'Abierto para agregar',
@@ -15,23 +28,33 @@ const myOrderGridEl = document.getElementById('myOrderGrid');
 const emptyMyOrderEl = document.getElementById('emptyMyOrder');
 const catalogViewEl = document.getElementById('catalogView');
 const myOrderViewEl = document.getElementById('myOrderView');
+const historyViewEl = document.getElementById('historyView');
 const statusBadgeEl = document.getElementById('statusBadge');
 const periodLabelEl = document.getElementById('periodLabel');
 const closedAlertEl = document.getElementById('closedAlert');
 const noOrderAlertEl = document.getElementById('noOrderAlert');
 const navCatalogBtn = document.getElementById('navCatalog');
 const navMyOrderBtn = document.getElementById('navMyOrder');
+const navHistoryBtn = document.getElementById('navHistory');
 const myOrderBadgeEl = document.getElementById('myOrderBadge');
+const submitBarEl = document.getElementById('submitBar');
+const submitStatusEl = document.getElementById('submitStatus');
+const submitOrderBtnEl = document.getElementById('submitOrderBtn');
+const myHistoryListEl = document.getElementById('myHistoryList');
+const emptyMyHistoryEl = document.getElementById('emptyMyHistory');
 const template = document.getElementById('productCardTemplate');
 
 let categories = [];
 let products = [];
+let allProducts = [];
 let order = null;
 let myItems = {}; // productId -> { quantity, notes }
+let mySubmission = null;
 let activeCategory = 'all';
 let activeBrand = 'all';
 let activeView = 'catalog';
 let itemsUnsub = null;
+let submissionUnsub = null;
 
 let user, profile;
 
@@ -49,6 +72,9 @@ async function init() {
 
   navCatalogBtn.addEventListener('click', () => setView('catalog'));
   navMyOrderBtn.addEventListener('click', () => setView('myOrder'));
+  navHistoryBtn.addEventListener('click', () => setView('history'));
+
+  submitOrderBtnEl.addEventListener('click', handleSubmitToggle);
 
   categoryFilterEl.addEventListener('change', () => {
     activeCategory = categoryFilterEl.value;
@@ -73,12 +99,22 @@ async function init() {
     renderCatalog();
   });
 
+  listenAllProducts(profile.salonId, (prods) => {
+    allProducts = prods;
+  });
+
+  listenCompletedOrders(profile.salonId, (orders) => {
+    renderMyHistory(orders);
+  });
+
   listenCurrentOrder(profile.salonId, (currentOrder) => {
     order = currentOrder;
     updateOrderUI();
 
     if (itemsUnsub) itemsUnsub();
+    if (submissionUnsub) submissionUnsub();
     myItems = {};
+    mySubmission = null;
     if (order) {
       itemsUnsub = listenOrderItems(profile.salonId, order.id, (items) => {
         myItems = {};
@@ -89,11 +125,18 @@ async function init() {
         renderMyOrder();
         updateBadge();
       });
+      submissionUnsub = listenMySubmission(profile.salonId, order.id, user.uid, (sub) => {
+        mySubmission = sub;
+        renderCatalog();
+        renderMyOrder();
+        updateSubmitBar();
+      });
     } else {
       renderCatalog();
       renderMyOrder();
       updateBadge();
     }
+    updateSubmitBar();
   });
 }
 
@@ -101,8 +144,10 @@ function setView(view) {
   activeView = view;
   catalogViewEl.classList.toggle('hidden', view !== 'catalog');
   myOrderViewEl.classList.toggle('hidden', view !== 'myOrder');
+  historyViewEl.classList.toggle('hidden', view !== 'history');
   navCatalogBtn.classList.toggle('active', view === 'catalog');
   navMyOrderBtn.classList.toggle('active', view === 'myOrder');
+  navHistoryBtn.classList.toggle('active', view === 'history');
 }
 
 function updateOrderUI() {
@@ -154,12 +199,115 @@ function makeOption(label, value) {
 }
 
 function disabledNow() {
-  return !order || order.status !== 'draft';
+  return !order || order.status !== 'draft' || !!mySubmission;
+}
+
+// ---------------------------------------------------------------------------
+// Cierre individual: cada persona puede "cerrar" su propio pedido antes de
+// que cierre todo el período. Mientras esté cerrado, no puede modificar sus
+// insumos (ver disabledNow) aunque el período siga abierto para el resto.
+// ---------------------------------------------------------------------------
+function updateSubmitBar() {
+  if (!order) {
+    submitBarEl.classList.add('hidden');
+    return;
+  }
+  submitBarEl.classList.remove('hidden');
+  if (mySubmission) {
+    submitStatusEl.textContent = 'Cerraste tu pedido. Ya no se puede modificar.';
+    submitOrderBtnEl.textContent = 'Reabrir mi pedido';
+    submitOrderBtnEl.disabled = order.status !== 'draft';
+  } else {
+    submitStatusEl.textContent =
+      order.status === 'draft'
+        ? 'Cuando termines de agregar insumos, podés cerrar tu pedido.'
+        : 'El período ya está cerrado para agregar insumos.';
+    submitOrderBtnEl.textContent = 'Cerrar mi pedido';
+    submitOrderBtnEl.disabled = order.status !== 'draft';
+  }
+}
+
+async function handleSubmitToggle() {
+  if (!order) return;
+  if (mySubmission) {
+    await unsubmitMyOrder(profile.salonId, order.id, user.uid).catch((err) => console.error(err));
+    return;
+  }
+  if (!confirm('¿Cerrar tu pedido? No vas a poder modificarlo salvo que lo reabras antes de que cierre el período.')) {
+    return;
+  }
+  await submitMyOrder(profile.salonId, order.id, user.uid).catch((err) => console.error(err));
+}
+
+// ---------------------------------------------------------------------------
+// Historial: pedidos de períodos ya archivados, filtrado a lo que pedí yo.
+// ---------------------------------------------------------------------------
+function renderMyHistory(orders) {
+  myHistoryListEl.innerHTML = '';
+  emptyMyHistoryEl.classList.toggle('hidden', orders.length > 0);
+  const productById = new Map(allProducts.map((p) => [p.id, p]));
+
+  for (const o of orders) {
+    const row = document.createElement('div');
+    row.className = 'consolidated-row';
+    const closedDate = o.closedAt?.toDate ? o.closedAt.toDate().toLocaleDateString('es') : '—';
+    row.innerHTML = `
+      <div class="consolidated-row-head">
+        <div>
+          <p class="product-name">${escapeHtml(formatPeriod(o))}</p>
+          <p class="product-meta">Cerrado el ${escapeHtml(closedDate)}</p>
+        </div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="consolidated-row-detail"></div>
+    `;
+
+    const head = row.querySelector('.consolidated-row-head');
+    const detail = row.querySelector('.consolidated-row-detail');
+    let loaded = false;
+
+    head.addEventListener('click', async () => {
+      row.classList.toggle('expanded');
+      if (!row.classList.contains('expanded') || loaded) return;
+      loaded = true;
+      detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
+      try {
+        const { items: histItems } = await getOrderDetail(profile.salonId, o.id);
+        const mine = histItems
+          .filter((i) => i.userId === user.uid)
+          .map((i) => ({ item: i, product: productById.get(i.productId) }))
+          .filter((e) => e.product)
+          .sort((a, b) => compareProductsByShade(a.product, b.product));
+        detail.innerHTML = '';
+        if (mine.length === 0) {
+          detail.innerHTML = '<p class="text-sm text-muted">No pediste insumos en este período.</p>';
+          return;
+        }
+        for (const { item, product } of mine) {
+          const line = document.createElement('div');
+          const meta = [product.brand, product.format].filter(Boolean).join(' · ');
+          const noteSuffix = item.notes ? ` — ${item.notes}` : '';
+          line.innerHTML = `<span>${escapeHtml(product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}${escapeHtml(noteSuffix)}</span><span>${item.quantity} unidades</span>`;
+          detail.appendChild(line);
+        }
+      } catch (err) {
+        console.error(err);
+        detail.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el detalle.</p>';
+      }
+    });
+
+    myHistoryListEl.appendChild(row);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function renderCatalog() {
   let visible = activeCategory === 'all' ? products : products.filter((p) => p.categoryId === activeCategory);
   if (activeBrand !== 'all') visible = visible.filter((p) => p.brand === activeBrand);
+  visible = visible.slice().sort(compareProductsByShade);
   productGridEl.innerHTML = '';
   emptyProductsEl.classList.toggle('hidden', visible.length > 0);
   for (const product of visible) {
@@ -173,9 +321,11 @@ function renderMyOrder() {
   myOrderGridEl.innerHTML = '';
   emptyMyOrderEl.classList.toggle('hidden', entries.length > 0);
   const productById = new Map(products.map((p) => [p.id, p]));
-  for (const [productId, local] of entries) {
-    const product = productById.get(productId);
-    if (!product) continue;
+  const sorted = entries
+    .map(([productId, local]) => ({ productId, local, product: productById.get(productId) }))
+    .filter((e) => e.product)
+    .sort((a, b) => compareProductsByShade(a.product, b.product));
+  for (const { product, local } of sorted) {
     myOrderGridEl.appendChild(buildProductCard(product, local));
   }
 }

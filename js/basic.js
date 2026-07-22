@@ -230,13 +230,30 @@ function updateSubmitBar() {
 async function handleSubmitToggle() {
   if (!order) return;
   if (mySubmission) {
-    await unsubmitMyOrder(profile.salonId, order.id, user.uid).catch((err) => console.error(err));
+    try {
+      await unsubmitMyOrder(profile.salonId, order.id, user.uid);
+    } catch (err) {
+      console.error(err);
+      alert(explainSubmitError(err));
+    }
     return;
   }
   if (!confirm('¿Cerrar tu pedido? No vas a poder modificarlo salvo que lo reabras antes de que cierre el período.')) {
     return;
   }
-  await submitMyOrder(profile.salonId, order.id, user.uid).catch((err) => console.error(err));
+  try {
+    await submitMyOrder(profile.salonId, order.id, user.uid);
+  } catch (err) {
+    console.error(err);
+    alert(explainSubmitError(err));
+  }
+}
+
+function explainSubmitError(err) {
+  if (err?.code === 'permission-denied') {
+    return 'No se pudo cerrar el pedido: el servidor todavía no tiene el permiso actualizado para esto. Avisale a quien administra Fluss.';
+  }
+  return 'No se pudo cerrar el pedido. Probá de nuevo en un momento.';
 }
 
 // ---------------------------------------------------------------------------

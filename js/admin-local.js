@@ -41,6 +41,7 @@ let users = [];
 let order = null;
 let items = [];
 let adjustments = [];
+let providerExportContext = null;
 let consolidatedView = 'byProduct'; // 'byProduct' | 'byUser'
 let unsubItems = null;
 let unsubAdjustments = null;
@@ -61,6 +62,7 @@ async function init() {
   setupPeriodModal();
   setupCatalogForms();
   setupProductEditModal();
+  setupProviderExportModal();
   setupInviteForm();
 
   const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
@@ -164,7 +166,7 @@ function renderActionsBar() {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
     bar.appendChild(makeButton('Descargar Excel', 'btn-secondary', () => downloadOrderXlsx()));
-    bar.appendChild(makeButton('Descargar por proveedor', 'btn-secondary', () => downloadOrderXlsxByProvider()));
+    bar.appendChild(makeButton('Descargar por proveedor', 'btn-secondary', () => openProviderExportModal()));
     bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
   }
 }
@@ -543,19 +545,11 @@ function downloadOrderXlsx(
 }
 
 /**
- * Genera un .xlsx con una hoja por proveedor (y "Sin proveedor" si aplica),
- * cada una con el mismo detalle que la hoja Total pero filtrado a ese
- * proveedor: útil para mandarle a cada proveedor solo lo suyo.
+ * Agrupa los productos del pedido por proveedor (clave = nombre del
+ * proveedor, o "Sin proveedor" si no tiene). Útil tanto para armar el modal
+ * de selección como para generar el propio archivo.
  */
-function downloadOrderXlsxByProvider(
-  o = order,
-  groups = consolidateByProduct(items, products, categories, adjustments),
-  receivedByProduct = new Map()
-) {
-  if (typeof XLSX === 'undefined') {
-    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
-    return;
-  }
+function groupFlatItemsByProvider(groups) {
   const flat = flattenProductGroups(groups);
   const byProvider = new Map();
   for (const entry of flat) {
@@ -564,7 +558,33 @@ function downloadOrderXlsxByProvider(
     list.push(entry);
     byProvider.set(key, list);
   }
-  const providerNames = Array.from(byProvider.keys()).sort((a, b) => collateEs(a, b));
+  return byProvider;
+}
+
+/**
+ * Genera un .xlsx por proveedor: si `onlyProvider` es null, arma una hoja
+ * por cada proveedor (y "Sin proveedor" si aplica); si se pasa un nombre de
+ * proveedor puntual, el archivo trae solo esa hoja con lo suyo.
+ */
+function downloadOrderXlsxByProvider(
+  o = order,
+  groups = consolidateByProduct(items, products, categories, adjustments),
+  receivedByProduct = new Map(),
+  onlyProvider = null
+) {
+  if (typeof XLSX === 'undefined') {
+    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
+    return;
+  }
+  const byProvider = groupFlatItemsByProvider(groups);
+  let providerNames = Array.from(byProvider.keys()).sort((a, b) => collateEs(a, b));
+  if (onlyProvider) {
+    providerNames = providerNames.filter((name) => name === onlyProvider);
+    if (providerNames.length === 0) {
+      alert('Ese proveedor no tiene productos en este pedido.');
+      return;
+    }
+  }
 
   const wb = XLSX.utils.book_new();
   const usedNames = new Set();
@@ -572,7 +592,51 @@ function downloadOrderXlsxByProvider(
     const rows = buildProductSheetRows(byProvider.get(providerName), receivedByProduct);
     XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName(providerName, usedNames));
   }
-  XLSX.writeFile(wb, `pedido-por-proveedor-${o.periodStart}-a-${o.periodEnd}.xlsx`);
+  const suffix = onlyProvider ? `-${onlyProvider.replace(/[\\/:*?"<>|]/g, ' ').trim()}` : '';
+  XLSX.writeFile(wb, `pedido-por-proveedor${suffix}-${o.periodStart}-a-${o.periodEnd}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
+// Modal: elegir proveedor antes de descargar
+// ---------------------------------------------------------------------------
+function setupProviderExportModal() {
+  const modal = document.getElementById('providerExportModal');
+
+  document.getElementById('providerExportCancelBtn').addEventListener('click', () => {
+    modal.hidden = true;
+  });
+
+  document.getElementById('providerExportConfirmBtn').addEventListener('click', () => {
+    if (!providerExportContext) return;
+    const { o, groups, receivedByProduct } = providerExportContext;
+    const selected = document.getElementById('providerExportSelect').value;
+    downloadOrderXlsxByProvider(o, groups, receivedByProduct, selected || null);
+    modal.hidden = true;
+  });
+}
+
+function openProviderExportModal(
+  o = order,
+  groups = consolidateByProduct(items, products, categories, adjustments),
+  receivedByProduct = new Map()
+) {
+  providerExportContext = { o, groups, receivedByProduct };
+
+  const providerNames = Array.from(groupFlatItemsByProvider(groups).keys()).sort((a, b) => collateEs(a, b));
+  const select = document.getElementById('providerExportSelect');
+  select.innerHTML = '';
+  const allOpt = document.createElement('option');
+  allOpt.value = '';
+  allOpt.textContent = 'Todos los proveedores (una hoja por cada uno)';
+  select.appendChild(allOpt);
+  for (const name of providerNames) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+
+  document.getElementById('providerExportModal').hidden = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1031,7 +1095,7 @@ function renderHistory(orders) {
         btnXlsxProvider.textContent = 'Descargar por proveedor';
         btnXlsxProvider.addEventListener('click', (e) => {
           e.stopPropagation();
-          downloadOrderXlsxByProvider(o, productGroups, receivedByProduct);
+          openProviderExportModal(o, productGroups, receivedByProduct);
         });
         downloadWrap.appendChild(btnTxt);
         downloadWrap.appendChild(btnXlsx);

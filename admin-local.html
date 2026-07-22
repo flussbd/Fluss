@@ -240,6 +240,22 @@ Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml;; 3800</pre>
     </div>
   </div>
 
+  <!-- Modal: elegir proveedor para descargar -->
+  <div id="providerExportModal" class="modal-overlay no-print" hidden>
+    <div class="modal" style="max-width: 420px;">
+      <h2>Descargar por proveedor</h2>
+      <p>Elegí qué proveedor querés descargar, o todos en hojas separadas.</p>
+      <div class="field">
+        <label>Proveedor</label>
+        <select class="input" id="providerExportSelect"></select>
+      </div>
+      <div class="modal-actions">
+        <button id="providerExportCancelBtn" class="btn btn-secondary">Cancelar</button>
+        <button id="providerExportConfirmBtn" class="btn btn-primary">Descargar</button>
+      </div>
+    </div>
+  </div>
+
   <template id="consolidatedRowTemplate">
     <div class="consolidated-row">
       <div class="consolidated-row-head">

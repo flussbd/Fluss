@@ -431,6 +431,46 @@ h1, h2, h3 {
   margin-top: 3px;
 }
 
+.product-price {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
+/* ---------- Total del pedido (usuario básico) ---------- */
+.order-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+
+.order-total-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--accent);
+}
+
+/* ---------- Estado general de recepción (usuario básico, Historial) ---------- */
+.status-line-ok {
+  color: var(--accent);
+  font-weight: 600;
+}
+.status-line-warn {
+  color: var(--danger);
+  font-weight: 600;
+}
+.status-line-pending {
+  color: var(--text-faint);
+}
+
 .stepper {
   display: flex;
   align-items: center;

@@ -298,18 +298,49 @@ function renderMyHistory(orders) {
         const receivedByProduct = new Map(
           histReceived.map((r) => [r.id, { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null }])
         );
+        // Cantidad total pedida por producto entre TODO el equipo (no solo yo),
+        // para saber si lo que llegó alcanza a cubrir también lo que pedí.
+        const totalRequestedByProduct = new Map();
+        for (const i of histItems) {
+          totalRequestedByProduct.set(i.productId, (totalRequestedByProduct.get(i.productId) || 0) + i.quantity);
+        }
         detail.innerHTML = '';
         if (mine.length === 0) {
           detail.innerHTML = '<p class="text-sm text-muted">No pediste insumos en este período.</p>';
           return;
         }
+
+        const mineWithStatus = mine.map(({ item, product }) => {
+          const received = receivedByProduct.get(item.productId);
+          const hasReceived = !!received && typeof received.receivedQuantity === 'number';
+          const totalRequested = totalRequestedByProduct.get(item.productId) || item.quantity;
+          const complete = hasReceived && received.receivedQuantity >= totalRequested;
+          return { item, product, received, hasReceived, complete };
+        });
+        const anyReceived = mineWithStatus.some((e) => e.hasReceived);
+        const allComplete = anyReceived && mineWithStatus.every((e) => e.complete);
+
+        const statusLine = document.createElement('p');
+        statusLine.className = 'text-sm mt-4';
+        if (!anyReceived) {
+          statusLine.classList.add('status-line-pending');
+          statusLine.textContent = 'Todavía no se registró la recepción de este período.';
+        } else if (allComplete) {
+          statusLine.classList.add('status-line-ok');
+          statusLine.textContent = '✓ Llegó todo lo que pediste.';
+        } else {
+          statusLine.classList.add('status-line-warn');
+          statusLine.textContent = '⚠ Llegó incompleto: falta algún producto por recibir.';
+        }
+        detail.appendChild(statusLine);
+
         if (histReceived.length > 0) {
           const note = document.createElement('p');
           note.className = 'text-sm text-muted';
           note.textContent = 'Recibido y costo son el total del pedido de todo el equipo, no solo lo tuyo. El precio es el de ese momento, aunque haya cambiado después.';
           detail.appendChild(note);
         }
-        for (const { item, product } of mine) {
+        for (const { item, product, received, hasReceived, complete } of mineWithStatus) {
           const line = document.createElement('div');
           line.className = 'receipt-line';
           const meta = [product.brand, product.format].filter(Boolean).join(' · ');
@@ -327,20 +358,28 @@ function renderMyHistory(orders) {
           pedidoEl.textContent = `Pedido: ${item.quantity}`;
           statsEl.appendChild(pedidoEl);
 
-          const received = receivedByProduct.get(item.productId);
-          const hasReceived = !!received && typeof received.receivedQuantity === 'number';
           if (hasReceived) {
             const receivedEl = document.createElement('span');
-            receivedEl.className = 'receipt-pedido';
-            receivedEl.textContent = `Llegó: ${received.receivedQuantity}`;
+            receivedEl.className = `receipt-diff ${complete ? 'receipt-diff-ok' : 'receipt-diff-short'}`;
+            receivedEl.textContent = `Llegó: ${received.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`;
             statsEl.appendChild(receivedEl);
 
             if (typeof received.unitPrice === 'number') {
+              const priceEl = document.createElement('span');
+              priceEl.className = 'receipt-pedido';
+              priceEl.textContent = `${formatPrice(received.unitPrice)} c/u`;
+              statsEl.appendChild(priceEl);
+
               const costEl = document.createElement('span');
-              costEl.className = 'receipt-diff receipt-diff-ok';
+              costEl.className = `receipt-diff ${complete ? 'receipt-diff-ok' : 'receipt-diff-short'}`;
               costEl.textContent = formatPrice(received.receivedQuantity * received.unitPrice);
               statsEl.appendChild(costEl);
             }
+          } else {
+            const pendingEl = document.createElement('span');
+            pendingEl.className = 'receipt-diff receipt-diff-pending';
+            pendingEl.textContent = 'Sin registrar';
+            statsEl.appendChild(pendingEl);
           }
 
           line.appendChild(nameEl);
@@ -390,6 +429,21 @@ function renderMyOrder() {
   for (const { product, local } of sorted) {
     myOrderGridEl.appendChild(buildProductCard(product, local));
   }
+
+  let total = 0;
+  let missingPrice = false;
+  for (const { product, local } of sorted) {
+    if (typeof product.price === 'number') total += product.price * local.quantity;
+    else missingPrice = true;
+  }
+  const totalWrapEl = document.getElementById('myOrderTotal');
+  const totalValueEl = document.getElementById('myOrderTotalValue');
+  const totalNoteEl = document.getElementById('myOrderTotalNote');
+  if (totalWrapEl && totalValueEl) {
+    totalWrapEl.classList.toggle('hidden', sorted.length === 0);
+    totalValueEl.textContent = formatPrice(total) + (missingPrice ? ' *' : '');
+  }
+  if (totalNoteEl) totalNoteEl.classList.toggle('hidden', !(sorted.length > 0 && missingPrice));
 }
 
 function updateBadge() {
@@ -407,6 +461,8 @@ function buildProductCard(product, local) {
   node.querySelector('.product-meta').textContent = [product.brand, product.line, product.shadeCode, product.format, product.supplierName]
     .filter(Boolean)
     .join(' · ');
+  const priceEl = node.querySelector('.product-price');
+  if (priceEl) priceEl.textContent = typeof product.price === 'number' ? `Precio: ${formatPrice(product.price)}` : '';
 
   const valueEl = node.querySelector('.stepper-value');
   valueEl.textContent = String(local.quantity);

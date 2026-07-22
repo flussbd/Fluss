@@ -67,6 +67,13 @@
         <div id="emptyMyOrder" class="empty-state hidden">
           Todavía no agregaste insumos. Andá al catálogo para empezar.
         </div>
+        <div id="myOrderTotal" class="order-total mt-4 hidden">
+          <span>Total estimado</span>
+          <span id="myOrderTotalValue" class="order-total-value"></span>
+        </div>
+        <p id="myOrderTotalNote" class="text-sm text-muted mt-4 hidden">
+          * Algunos productos no tienen precio cargado; no están incluidos en el total.
+        </p>
       </div>
 
       <!-- Vista Historial -->
@@ -83,6 +90,7 @@
         <div>
           <p class="product-name"></p>
           <p class="product-meta"></p>
+          <p class="product-price"></p>
         </div>
         <div class="stepper">
           <button class="stepper-btn minus">−</button>

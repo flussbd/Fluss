@@ -85,10 +85,16 @@ export async function getOrderDetail(salonId, orderId) {
   };
 }
 
-/** Registra cuánto llegó realmente de un producto para un pedido ya archivado. */
-export function setReceivedQuantity(salonId, orderId, productId, quantity, adminUid) {
+/**
+ * Registra cuánto llegó realmente de un producto para un pedido ya archivado.
+ * Guarda también el precio unitario vigente en ESE momento (unitPrice): como
+ * el precio del producto puede cambiar después, esto "congela" cuánto costó
+ * ese pedido puntual en vez de recalcularlo con el precio actualizado.
+ */
+export function setReceivedQuantity(salonId, orderId, productId, quantity, adminUid, unitPrice = null) {
   return setDoc(receivedRef(salonId, orderId, productId), {
     receivedQuantity: quantity,
+    unitPrice: typeof unitPrice === 'number' && !Number.isNaN(unitPrice) ? unitPrice : null,
     updatedBy: adminUid,
     updatedAt: serverTimestamp(),
   });

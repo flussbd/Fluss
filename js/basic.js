@@ -289,22 +289,62 @@ function renderMyHistory(orders) {
       loaded = true;
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
-        const { items: histItems } = await getOrderDetail(profile.salonId, o.id);
+        const { items: histItems, received: histReceived } = await getOrderDetail(profile.salonId, o.id);
         const mine = histItems
           .filter((i) => i.userId === user.uid)
           .map((i) => ({ item: i, product: productById.get(i.productId) }))
           .filter((e) => e.product)
           .sort((a, b) => compareProductsByShade(a.product, b.product));
+        const receivedByProduct = new Map(
+          histReceived.map((r) => [r.id, { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null }])
+        );
         detail.innerHTML = '';
         if (mine.length === 0) {
           detail.innerHTML = '<p class="text-sm text-muted">No pediste insumos en este período.</p>';
           return;
         }
+        if (histReceived.length > 0) {
+          const note = document.createElement('p');
+          note.className = 'text-sm text-muted';
+          note.textContent = 'Recibido y costo son el total del pedido de todo el equipo, no solo lo tuyo. El precio es el de ese momento, aunque haya cambiado después.';
+          detail.appendChild(note);
+        }
         for (const { item, product } of mine) {
           const line = document.createElement('div');
+          line.className = 'receipt-line';
           const meta = [product.brand, product.format].filter(Boolean).join(' · ');
           const noteSuffix = item.notes ? ` — ${item.notes}` : '';
-          line.innerHTML = `<span>${escapeHtml(product.name)}${meta ? ' — ' + escapeHtml(meta) : ''}${escapeHtml(noteSuffix)}</span><span>${item.quantity} unidades</span>`;
+
+          const nameEl = document.createElement('span');
+          nameEl.className = 'receipt-name';
+          nameEl.textContent = `${product.name}${meta ? ' — ' + meta : ''}${noteSuffix}`;
+
+          const statsEl = document.createElement('span');
+          statsEl.className = 'receipt-stats';
+
+          const pedidoEl = document.createElement('span');
+          pedidoEl.className = 'receipt-pedido';
+          pedidoEl.textContent = `Pedido: ${item.quantity}`;
+          statsEl.appendChild(pedidoEl);
+
+          const received = receivedByProduct.get(item.productId);
+          const hasReceived = !!received && typeof received.receivedQuantity === 'number';
+          if (hasReceived) {
+            const receivedEl = document.createElement('span');
+            receivedEl.className = 'receipt-pedido';
+            receivedEl.textContent = `Llegó: ${received.receivedQuantity}`;
+            statsEl.appendChild(receivedEl);
+
+            if (typeof received.unitPrice === 'number') {
+              const costEl = document.createElement('span');
+              costEl.className = 'receipt-diff receipt-diff-ok';
+              costEl.textContent = formatPrice(received.receivedQuantity * received.unitPrice);
+              statsEl.appendChild(costEl);
+            }
+          }
+
+          line.appendChild(nameEl);
+          line.appendChild(statsEl);
           detail.appendChild(line);
         }
       } catch (err) {
@@ -319,6 +359,11 @@ function renderMyHistory(orders) {
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatPrice(price) {
+  if (typeof price !== 'number' || Number.isNaN(price)) return '';
+  return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
 }
 
 function renderCatalog() {

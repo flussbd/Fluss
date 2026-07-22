@@ -365,44 +365,74 @@ function downloadOrderXlsx(
     'Proveedor',
     'Precio unitario',
     'Pedido',
+    'Total',
     'Recibido',
     'Diferencia',
     'Costo recibido',
   ];
   const rows = [header];
   let totalPedido = 0;
+  let totalTotal = 0;
   let totalRecibido = 0;
   let totalCosto = 0;
 
+  // Aplanamos todos los productos de todas las categorías y los ordenamos
+  // por marca, categoría, línea, producto, tono y formato (en ese orden).
+  const flat = [];
   for (const group of groups) {
     for (const item of group.items) {
-      const receivedRaw = receivedByProduct.get(item.product.id);
-      const hasReceived = typeof receivedRaw === 'number';
-      const price = typeof item.product.price === 'number' ? item.product.price : null;
-      const cost = hasReceived && price !== null ? receivedRaw * price : '';
-
-      totalPedido += item.totalQuantity;
-      if (hasReceived) totalRecibido += receivedRaw;
-      if (typeof cost === 'number') totalCosto += cost;
-
-      rows.push([
-        item.product.brand || '',
-        group.category.name,
-        item.product.line || '',
-        item.product.name,
-        item.product.shadeCode || '',
-        item.product.format || '',
-        item.product.supplierName || '',
-        price !== null ? price : '',
-        item.totalQuantity,
-        hasReceived ? receivedRaw : '',
-        hasReceived ? receivedRaw - item.totalQuantity : '',
-        cost,
-      ]);
+      flat.push({ item, categoryName: group.category.name });
     }
   }
+  const collate = (a, b) => (a || '').localeCompare(b || '', 'es', { numeric: true, sensitivity: 'base' });
+  flat.sort((a, b) => {
+    return (
+      collate(a.item.product.brand, b.item.product.brand) ||
+      collate(a.categoryName, b.categoryName) ||
+      collate(a.item.product.line, b.item.product.line) ||
+      collate(a.item.product.name, b.item.product.name) ||
+      collate(a.item.product.shadeCode, b.item.product.shadeCode) ||
+      collate(a.item.product.format, b.item.product.format)
+    );
+  });
 
-  rows.push(['', '', '', '', '', '', '', 'TOTAL', totalPedido, totalRecibido, totalRecibido - totalPedido, totalCosto]);
+  for (const { item, categoryName } of flat) {
+    const received = receivedByProduct.get(item.product.id);
+    const hasReceived = !!received && typeof received.receivedQuantity === 'number';
+    const receivedRaw = hasReceived ? received.receivedQuantity : null;
+    // Si ya se registró la recepción, usamos el precio "congelado" en ese
+    // momento (no el precio actual del producto, que puede haber cambiado).
+    const price = hasReceived && typeof received.unitPrice === 'number'
+      ? received.unitPrice
+      : typeof item.product.price === 'number'
+        ? item.product.price
+        : null;
+    const total = price !== null ? item.totalQuantity * price : '';
+    const cost = hasReceived && price !== null ? receivedRaw * price : '';
+
+    totalPedido += item.totalQuantity;
+    if (typeof total === 'number') totalTotal += total;
+    if (hasReceived) totalRecibido += receivedRaw;
+    if (typeof cost === 'number') totalCosto += cost;
+
+    rows.push([
+      item.product.brand || '',
+      categoryName,
+      item.product.line || '',
+      item.product.name,
+      item.product.shadeCode || '',
+      item.product.format || '',
+      item.product.supplierName || '',
+      price !== null ? price : '',
+      item.totalQuantity,
+      total,
+      hasReceived ? receivedRaw : '',
+      hasReceived ? receivedRaw - item.totalQuantity : '',
+      cost,
+    ]);
+  }
+
+  rows.push(['', '', '', '', '', '', '', 'TOTAL', totalPedido, totalTotal, totalRecibido, totalRecibido - totalPedido, totalCosto]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -816,7 +846,9 @@ function renderHistory(orders) {
         );
         const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
         const userGroups = consolidateByUser(histItems, products);
-        const receivedByProduct = new Map(histReceived.map((r) => [r.id, r.receivedQuantity]));
+        const receivedByProduct = new Map(
+          histReceived.map((r) => [r.id, { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null }])
+        );
         detail.innerHTML = '';
 
         const topBar = document.createElement('section');
@@ -938,8 +970,9 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       pedidoEl.className = 'receipt-pedido';
       pedidoEl.textContent = `Pedido: ${item.totalQuantity}`;
 
-      const receivedRaw = receivedByProduct.get(item.product.id);
-      const hasReceived = typeof receivedRaw === 'number';
+      const received = receivedByProduct.get(item.product.id);
+      const hasReceived = !!received && typeof received.receivedQuantity === 'number';
+      const receivedRaw = hasReceived ? received.receivedQuantity : null;
 
       const input = document.createElement('input');
       input.className = 'input receipt-input';
@@ -958,7 +991,11 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
         input.addEventListener('change', () => {
           const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
           if (value === null) return;
-          setReceivedQuantity(ctx.salonId, ctx.orderId, item.product.id, value, ctx.adminUid)
+          // Se guarda el precio ACTUAL del producto como precio "congelado"
+          // de esta recepción, para que no cambie si después se edita el
+          // precio del producto en el catálogo.
+          const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
+          setReceivedQuantity(ctx.salonId, ctx.orderId, item.product.id, value, ctx.adminUid, unitPrice)
             .then(() => {
               const diff = value - item.totalQuantity;
               diffEl.className = `receipt-diff ${receiptDiffClass(true, diff)}`;

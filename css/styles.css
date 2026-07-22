@@ -348,6 +348,8 @@ h1, h2, h3 {
   overflow-x: auto;
   padding-bottom: 4px;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
 }
 .tabs::-webkit-scrollbar {
   display: none;
@@ -380,9 +382,9 @@ h1, h2, h3 {
   margin-top: 16px;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 480px) {
   .product-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   }
 }
 
@@ -900,10 +902,6 @@ h1, h2, h3 {
 /* Escritorio ancho: catálogo a 3 columnas y un poco más de aire para
    la vista angosta del usuario básico. */
 @media (min-width: 1000px) {
-  .product-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
   .main-narrow {
     max-width: 560px;
   }

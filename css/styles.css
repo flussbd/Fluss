@@ -262,7 +262,7 @@ h1, h2, h3 {
 
 .input {
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 16px;
   padding: 11px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -472,7 +472,7 @@ h1, h2, h3 {
 
 .note-input {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: 16px;
   padding: 8px 10px;
 }
 
@@ -573,7 +573,7 @@ h1, h2, h3 {
 }
 
 .qty-input {
-  width: 68px;
+  width: 76px;
   text-align: right;
   font-family: var(--font-mono);
   font-weight: 600;
@@ -897,6 +897,81 @@ h1, h2, h3 {
 }
 .hidden {
   display: none !important;
+}
+
+/* ---------- Responsive: teléfono vs. escritorio ---------- */
+
+/* Escritorio ancho: catálogo a 3 columnas y un poco más de aire para
+   la vista angosta del usuario básico. */
+@media (min-width: 1000px) {
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .main-narrow {
+    max-width: 560px;
+  }
+}
+
+/* Teléfono: el header con pestañas (Pedido actual/Catálogo/Equipo/Historial)
+   pasa a una franja propia con scroll horizontal en vez de amontonarse, los
+   botones de acción se acomodan en filas de a dos, y las filas con más datos
+   (consolidado, listas) pueden partirse en dos líneas sin romperse. */
+@media (max-width: 640px) {
+  .app-header-inner {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .brand {
+    font-size: 14px;
+  }
+
+  .nav-links {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-link {
+    flex-shrink: 0;
+  }
+
+  .main {
+    padding: 16px 12px 32px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  #actionsBar .btn {
+    flex: 1 1 140px;
+  }
+
+  .consolidated-row-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .list-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .stat-tile-value {
+    font-size: 19px;
+  }
+
+  .modal {
+    padding: 20px;
+  }
 }
 
 /* ---------- Impresión (Generar PDF de orden) ---------- */

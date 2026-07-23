@@ -1,0 +1,12 @@
+{
+  "name": "fluss-tests",
+  "private": true,
+  "type": "module",
+  "description": "Tests de Fluss (Vitest). No es un build step de la app: la app sigue siendo HTML/JS plano, esto es solo tooling de desarrollo.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

@@ -13,6 +13,7 @@ import {
   setMyItem,
   compareProductsByShade,
 } from './db.js';
+import { formatPrice, escapeHtml, resolveMyArrived } from './pure.js';
 
 const STATUS_LABEL = {
   draft: 'Abierto para agregar',
@@ -333,7 +334,7 @@ function renderMyHistory(orders) {
           const hasReceived = !!received && typeof received.receivedQuantity === 'number';
           const totalRequested = totalRequestedByProduct.get(item.productId) || item.quantity;
           const requesterCount = requesterCountByProduct.get(item.productId)?.size || 1;
-          const arrived = resolveMyArrived(received, item.quantity, totalRequested, requesterCount);
+          const arrived = resolveMyArrived(received, item.quantity, totalRequested, requesterCount, user.uid);
           const complete = arrived.state === 'known' && arrived.quantity >= item.quantity;
           return { item, product, received, hasReceived, arrived, complete };
         });
@@ -469,34 +470,6 @@ function renderMyHistory(orders) {
     });
     myHistoryListEl.appendChild(moreBtn);
   }
-}
-
-function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-/**
- * Cuánto de un producto me llegó A MÍ (no al equipo). La recepción se
- * registra por producto para todo el equipo, así que:
- * - si nadie registró recepción todavía → 'none'.
- * - si llegó >= lo que pidió TODO el equipo → seguro que llegó lo mío entero.
- * - si solo yo pedí ese producto → lo que llegó es, por descarte, todo mío.
- * - si llegó menos y lo pidió más de una persona → hace falta que el admin
- *   asigne a mano cuánto le toca a cada quien (allocations); hasta que lo
- *   haga, queda 'pending' (no inventamos un número).
- */
-function resolveMyArrived(received, myQuantity, totalRequested, requesterCount) {
-  if (!received || typeof received.receivedQuantity !== 'number') return { state: 'none' };
-  if (received.receivedQuantity >= totalRequested) return { state: 'known', quantity: myQuantity };
-  if (requesterCount <= 1) return { state: 'known', quantity: received.receivedQuantity };
-  const allocations = received.allocations || {};
-  if (typeof allocations[user.uid] === 'number') return { state: 'known', quantity: allocations[user.uid] };
-  return { state: 'pending' };
-}
-
-function formatPrice(price) {
-  if (typeof price !== 'number' || Number.isNaN(price)) return '';
-  return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
 }
 
 /** Construye una columna label+valor para la grilla de detalle del Historial. */

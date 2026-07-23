@@ -1,5 +1,6 @@
 import { requireRole, logout } from './auth.js';
 import { listenSalons, createSalon, createInvite } from './db.js';
+import { escapeHtml } from './pure.js';
 
 let user, profile;
 let salons = [];
@@ -80,8 +81,4 @@ function renderSalons() {
     row.appendChild(btn);
     container.appendChild(row);
   }
-}
-
-function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

@@ -313,91 +313,9 @@ export async function createSalon(name, createdBy) {
 }
 
 // ---------------------------------------------------------------------------
-// Orden "natural" por tono/código (ej: 5/0, 7NN, 10GI) en vez de alfabético.
+// Funciones puras (comparación, consolidación): viven en pure.js para poder
+// testearlas con Vitest sin depender de Firebase. Se re-exportan acá para
+// que el resto del código (que ya hace `import { consolidateByProduct, ... }
+// from './db.js'`) no tenga que cambiar nada.
 // ---------------------------------------------------------------------------
-
-/** Compara dos productos por shadeCode (número de tono) y usa el nombre como desempate. */
-export function compareProductsByShade(a, b) {
-  // Nombre primero (con números incluidos comparados numéricamente: "5/0"
-  // antes que "10/1"), y el código de tono como desempate si dos productos
-  // tienen el mismo nombre.
-  const na = a?.name || '';
-  const nb = b?.name || '';
-  const nameCmp = na.localeCompare(nb, 'es', { numeric: true, sensitivity: 'base' });
-  if (nameCmp !== 0) return nameCmp;
-  const ca = a?.shadeCode || '';
-  const cb = b?.shadeCode || '';
-  return ca.localeCompare(cb, 'es', { numeric: true, sensitivity: 'base' });
-}
-
-// ---------------------------------------------------------------------------
-// Consolidación (funciones puras, sin dependencia de Firestore)
-// ---------------------------------------------------------------------------
-
-/**
- * Agrupa las líneas de pedido por producto y por categoría. Aplica el
- * ajuste final del admin (si existe) por encima de lo solicitado.
- */
-export function consolidateByProduct(items, products, categories, adjustments = []) {
-  const productById = new Map(products.map((p) => [p.id, p]));
-  const adjustmentByProduct = new Map(adjustments.map((a) => [a.id, a.adjustedQuantity]));
-
-  const byProduct = new Map();
-  for (const item of items) {
-    const product = productById.get(item.productId);
-    if (!product) continue;
-    const entry = byProduct.get(product.id) || {
-      product,
-      requestedQuantity: 0,
-      totalQuantity: 0,
-      breakdown: [],
-    };
-    entry.requestedQuantity += item.quantity;
-    entry.totalQuantity += item.quantity;
-    entry.breakdown.push({
-      userId: item.userId,
-      userName: item.userName,
-      quantity: item.quantity,
-      notes: item.notes,
-    });
-    byProduct.set(product.id, entry);
-  }
-
-  for (const entry of byProduct.values()) {
-    if (adjustmentByProduct.has(entry.product.id)) {
-      entry.totalQuantity = adjustmentByProduct.get(entry.product.id);
-    }
-  }
-
-  const byCategory = new Map();
-  for (const entry of byProduct.values()) {
-    const list = byCategory.get(entry.product.categoryId) || [];
-    list.push(entry);
-    byCategory.set(entry.product.categoryId, list);
-  }
-
-  return categories
-    .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }))
-    .map((category) => ({
-      category,
-      items: (byCategory.get(category.id) || []).sort((a, b) => compareProductsByShade(a.product, b.product)),
-    }))
-    .filter((group) => group.items.length > 0);
-}
-
-/** Agrupa las líneas de pedido por usuario ("vista por peluquero" del admin). */
-export function consolidateByUser(items, products) {
-  const productById = new Map(products.map((p) => [p.id, p]));
-  const byUser = new Map();
-  for (const item of items) {
-    const product = productById.get(item.productId);
-    if (!product) continue;
-    const entry = byUser.get(item.userId) || { userId: item.userId, userName: item.userName, items: [] };
-    entry.items.push({ product, quantity: item.quantity, notes: item.notes });
-    byUser.set(item.userId, entry);
-  }
-  return Array.from(byUser.values())
-    .map((u) => ({ ...u, items: u.items.sort((a, b) => compareProductsByShade(a.product, b.product)) }))
-    .sort((a, b) => a.userName.localeCompare(b.userName));
-}
+export { compareProductsByShade, consolidateByProduct, consolidateByUser } from './pure.js';

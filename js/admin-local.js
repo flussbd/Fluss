@@ -28,6 +28,7 @@ import {
   consolidateByUser,
   compareProductsByShade,
 } from './db.js';
+import { formatPrice, escapeHtml, receiptDiffClass } from './pure.js';
 import { doc, getDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
 
@@ -966,11 +967,6 @@ function renderProductList() {
   }
 }
 
-function formatPrice(price) {
-  if (typeof price !== 'number' || Number.isNaN(price)) return null;
-  return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
-}
-
 function buildProductRow(p, categoryById, isInactive) {
   const row = document.createElement('div');
   row.className = 'list-row';
@@ -1317,13 +1313,6 @@ function renderHistory(orders) {
   }
 }
 
-/** Clasifica la diferencia recibido-pedido para colorearla (ver .receipt-diff-* en styles.css). */
-function receiptDiffClass(hasReceived, diff) {
-  if (!hasReceived) return 'receipt-diff-pending';
-  if (diff === 0) return 'receipt-diff-ok';
-  return diff < 0 ? 'receipt-diff-short' : 'receipt-diff-over';
-}
-
 /** Construye una columna label+valor (mismo estilo que el Historial del usuario básico). */
 function buildHistStatEl(label, value, tone = null) {
   const wrap = document.createElement('section');
@@ -1668,6 +1657,3 @@ function formatPeriod(o) {
   return `${start} — ${end}`;
 }
 
-function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}

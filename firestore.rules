@@ -72,9 +72,15 @@ service cloud.firestore {
     // pedidos, etc. A propósito NO se usa para bloquear LECTURA (isMemberOf
     // sigue sin depender de esto) — el equipo de ese salón debe poder seguir
     // viendo su historial aunque el salón esté inactivo.
+    //
+    // Importante: si el doc salons/{salonId} no existe (nunca debería pasar
+    // en la app real, porque createSalon() siempre lo crea, pero SÍ pasa en
+    // varios tests que escriben directo en subcolecciones sin crear antes el
+    // doc padre) se trata como salón ACTIVO por defecto — el default es
+    // "true" salvo que exista el doc y diga explícitamente active:false.
     function salonIsActive(salonId) {
-      return exists(/databases/$(database)/documents/salons/$(salonId))
-        && get(/databases/$(database)/documents/salons/$(salonId)).data.get('active', true) == true;
+      return !exists(/databases/$(database)/documents/salons/$(salonId))
+        || get(/databases/$(database)/documents/salons/$(salonId)).data.get('active', true) == true;
     }
 
     function isPlatformAdmin() {

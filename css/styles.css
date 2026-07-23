@@ -733,6 +733,32 @@ h1, h2, h3 {
   text-align: right;
 }
 
+/* ---------- Asignar recepción entre usuarios (Historial, admin) ---------- */
+.alloc-panel {
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alloc-form {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--neutral-bg);
+  border-radius: var(--radius);
+}
+
+.alloc-row {
+  font-size: 13px;
+  gap: 10px;
+}
+
+.alloc-input {
+  width: 70px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
 .receipt-diff-ok {
   color: var(--accent);
 }

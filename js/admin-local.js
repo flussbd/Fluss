@@ -19,6 +19,7 @@ import {
   deactivateProduct,
   activateProduct,
   setReceivedQuantity,
+  setReceivedAllocations,
   createInvite,
   updateUserName,
   consolidateByProduct,
@@ -107,6 +108,8 @@ async function init() {
     renderDashboard();
   });
   listenInvitesOfSalon(profile.salonId, renderInviteList);
+
+  startAutoCloseTicker();
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +143,7 @@ function renderDashboard() {
   const badge = document.getElementById('statusBadge');
   badge.textContent = STATUS_LABEL[order.status];
   badge.className = `badge badge-${order.status}`;
+  updateAutoCloseCountdown();
 
   const groups = consolidateByProduct(items, products, categories, adjustments);
   const totalProducts = groups.reduce((s, g) => s + g.items.length, 0);
@@ -305,6 +309,55 @@ function maybeAutoCloseDraft() {
   if (new Date() > endOfPeriod) {
     startReview(profile.salonId, order.id).catch(console.error);
   }
+}
+
+// Reloj de cierre automático: mientras este panel esté abierto en el
+// navegador, revisamos cada 15 segundos si ya se cumplió la fecha límite
+// (en vez de esperar a que alguien recargue la página) y mostramos una
+// cuenta regresiva. Ojo: esto SOLO corre si hay una pestaña de Fluss
+// abierta en ese momento — sin servidor propio no hay forma de cerrar el
+// período si nadie tiene la app abierta cuando se cumple la hora; en ese
+// caso se cierra igual, apenas alguien vuelva a entrar al panel.
+let autoCloseTicker = null;
+function startAutoCloseTicker() {
+  if (autoCloseTicker) return;
+  autoCloseTicker = setInterval(() => {
+    maybeAutoCloseDraft();
+    updateAutoCloseCountdown();
+  }, 15000);
+}
+
+function updateAutoCloseCountdown() {
+  const el = document.getElementById('autoCloseCountdown');
+  if (!el) return;
+  if (!order || order.status !== 'draft' || !order.periodEnd) {
+    el.classList.add('hidden');
+    return;
+  }
+  const endOfPeriod = new Date(`${order.periodEnd}T23:59:59`);
+  if (Number.isNaN(endOfPeriod.getTime())) {
+    el.classList.add('hidden');
+    return;
+  }
+  const remaining = endOfPeriod.getTime() - Date.now();
+  el.classList.remove('hidden');
+  if (remaining <= 0) {
+    el.textContent = 'Ya se cumplió la fecha límite: cerrando el período automáticamente…';
+  } else {
+    el.textContent = `Se cierra automáticamente en ${formatCountdown(remaining)} (mientras esta pestaña siga abierta), o apenas alguien vuelva a entrar al panel.`;
+  }
+}
+
+function formatCountdown(ms) {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} d`);
+  if (days > 0 || hours > 0) parts.push(`${hours} h`);
+  parts.push(`${minutes} min`);
+  return parts.join(' ');
 }
 
 async function handleCloseFortnight() {
@@ -1046,7 +1099,10 @@ function renderHistory(orders) {
         const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
         const userGroups = consolidateByUser(histItems, products);
         const receivedByProduct = new Map(
-          histReceived.map((r) => [r.id, { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null }])
+          histReceived.map((r) => [
+            r.id,
+            { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null, allocations: r.allocations || {} },
+          ])
         );
         detail.innerHTML = '';
 
@@ -1270,6 +1326,13 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       line.appendChild(nameEl);
       line.appendChild(statsEl);
       container.appendChild(line);
+
+      // Si no llegó todo y lo pidió más de una persona, no hay forma de
+      // saber sola cuánto le toca a cada quien: el admin lo asigna a mano.
+      const needsAllocation = hasReceived && receivedRaw < item.totalQuantity && item.breakdown.length > 1;
+      if (needsAllocation) {
+        container.appendChild(buildAllocationPanel(item, received, ctx));
+      }
     }
   }
 
@@ -1303,6 +1366,99 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
     container.appendChild(totalWrap);
     recomputeTotals();
   }
+}
+
+/**
+ * Panel para asignar, producto por producto, cuánto de lo que llegó le
+ * corresponde a cada persona que lo pidió — necesario cuando llegó menos de
+ * lo pedido y hay más de un usuario involucrado (no hay forma de saberlo
+ * solo con la cantidad total). Sin esta asignación, el usuario básico ve
+ * "Pendiente de asignación" en su Historial en vez de un número.
+ */
+function buildAllocationPanel(item, received, ctx) {
+  // <section>, no <div>: cuelga de .consolidated-row-detail (ver notas más arriba).
+  const wrap = document.createElement('section');
+  wrap.className = 'alloc-panel';
+
+  const existing = received.allocations || {};
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-ghost btn-sm';
+  const initialAllocated = item.breakdown.reduce((s, b) => s + (existing[b.userId] || 0), 0);
+  toggleBtn.textContent =
+    initialAllocated > 0
+      ? `Asignado ${initialAllocated}/${received.receivedQuantity} — editar asignación`
+      : 'No llegó todo: asignar entre quienes lo pidieron';
+  wrap.appendChild(toggleBtn);
+
+  const form = document.createElement('section');
+  form.className = 'alloc-form hidden';
+
+  const inputs = {};
+  for (const b of item.breakdown) {
+    const row = document.createElement('div');
+    row.className = 'alloc-row';
+    const label = document.createElement('span');
+    label.textContent = `${b.userName} (pidió ${b.quantity})`;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.className = 'input alloc-input';
+    input.value = existing[b.userId] ?? '';
+    input.disabled = !ctx;
+    inputs[b.userId] = input;
+    row.appendChild(label);
+    row.appendChild(input);
+    form.appendChild(row);
+  }
+
+  const statusEl = document.createElement('p');
+  statusEl.className = 'text-sm text-muted';
+  statusEl.textContent = `Llegaron ${received.receivedQuantity} en total. Repartilas entre las personas de arriba.`;
+  form.appendChild(statusEl);
+
+  if (ctx) {
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn btn-secondary btn-sm mt-4';
+    saveBtn.textContent = 'Guardar asignación';
+    saveBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const allocations = {};
+      let sum = 0;
+      for (const [uid, input] of Object.entries(inputs)) {
+        const v = input.value.trim() === '' ? 0 : Math.max(0, Number(input.value) || 0);
+        allocations[uid] = v;
+        sum += v;
+      }
+      if (sum > received.receivedQuantity) {
+        alert(`Asignaste ${sum} unidades pero solo llegaron ${received.receivedQuantity}. Ajustá los números.`);
+        return;
+      }
+      try {
+        await setReceivedAllocations(ctx.salonId, ctx.orderId, item.product.id, allocations, ctx.adminUid);
+        received.allocations = allocations;
+        toggleBtn.textContent = `Asignado ${sum}/${received.receivedQuantity} — editar asignación`;
+        statusEl.textContent =
+          sum === received.receivedQuantity
+            ? 'Asignación completa: cada persona ya puede ver en su Historial cuánto le llegó.'
+            : `Todavía falta asignar ${received.receivedQuantity - sum} unidad(es).`;
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo guardar la asignación. Probá de nuevo.');
+      }
+    });
+    form.appendChild(saveBtn);
+  }
+
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    form.classList.toggle('hidden');
+  });
+
+  wrap.appendChild(form);
+  return wrap;
 }
 
 function renderHistUserView(container, userGroups, categoryById, userById) {

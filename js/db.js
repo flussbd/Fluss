@@ -100,6 +100,25 @@ export function setReceivedQuantity(salonId, orderId, productId, quantity, admin
   });
 }
 
+/**
+ * Cuando lo que llegó de un producto no alcanza para cubrir a todo el
+ * equipo, el admin asigna a mano cuánto le corresponde a cada persona
+ * (mapa userId -> cantidad). Se guarda en el mismo documento de recepción,
+ * sin tocar receivedQuantity/unitPrice, para que cada usuario básico vea
+ * en su Historial exactamente cuánto le llegó a él (no una estimación).
+ */
+export function setReceivedAllocations(salonId, orderId, productId, allocations, adminUid) {
+  return setDoc(
+    receivedRef(salonId, orderId, productId),
+    {
+      allocations,
+      allocationsUpdatedBy: adminUid,
+      allocationsUpdatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 export function listenAdjustments(salonId, orderId, cb) {
   return onSnapshot(adjustmentsCol(salonId, orderId), (snap) =>
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))

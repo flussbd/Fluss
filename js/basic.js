@@ -296,13 +296,22 @@ function renderMyHistory(orders) {
           .filter((e) => e.product)
           .sort((a, b) => compareProductsByShade(a.product, b.product));
         const receivedByProduct = new Map(
-          histReceived.map((r) => [r.id, { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null }])
+          histReceived.map((r) => [
+            r.id,
+            { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null, allocations: r.allocations || {} },
+          ])
         );
-        // Cantidad total pedida por producto entre TODO el equipo (no solo yo),
-        // para saber si lo que llegó alcanza a cubrir también lo que pedí.
+        // Cantidad total pedida por producto entre TODO el equipo (no solo yo)
+        // y cuánta gente distinta lo pidió, para saber si lo que llegó
+        // alcanza para todos o si hace falta que el admin asigne quién se
+        // queda con qué.
         const totalRequestedByProduct = new Map();
+        const requesterCountByProduct = new Map();
         for (const i of histItems) {
           totalRequestedByProduct.set(i.productId, (totalRequestedByProduct.get(i.productId) || 0) + i.quantity);
+          const set = requesterCountByProduct.get(i.productId) || new Set();
+          set.add(i.userId);
+          requesterCountByProduct.set(i.productId, set);
         }
         detail.innerHTML = '';
         if (mine.length === 0) {
@@ -314,43 +323,49 @@ function renderMyHistory(orders) {
           const received = receivedByProduct.get(item.productId);
           const hasReceived = !!received && typeof received.receivedQuantity === 'number';
           const totalRequested = totalRequestedByProduct.get(item.productId) || item.quantity;
-          const complete = hasReceived && received.receivedQuantity >= totalRequested;
-          return { item, product, received, hasReceived, complete };
+          const requesterCount = requesterCountByProduct.get(item.productId)?.size || 1;
+          const arrived = resolveMyArrived(received, item.quantity, totalRequested, requesterCount);
+          const complete = arrived.state === 'known' && arrived.quantity >= item.quantity;
+          return { item, product, received, hasReceived, arrived, complete };
         });
         const anyReceived = mineWithStatus.some((e) => e.hasReceived);
-        const allComplete = anyReceived && mineWithStatus.every((e) => e.complete);
+        const anyPending = mineWithStatus.some((e) => e.arrived.state === 'pending');
+        const allComplete = anyReceived && !anyPending && mineWithStatus.every((e) => e.complete);
 
         const statusLine = document.createElement('p');
         statusLine.className = 'text-sm mt-4';
         if (!anyReceived) {
           statusLine.classList.add('status-line-pending');
           statusLine.textContent = 'Todavía no se registró la recepción de este período.';
+        } else if (anyPending) {
+          statusLine.classList.add('status-line-pending');
+          statusLine.textContent = 'Falta que tu administrador asigne cuánto te llegó a vos de algún producto.';
         } else if (allComplete) {
           statusLine.classList.add('status-line-ok');
           statusLine.textContent = '✓ Llegó todo lo que pediste.';
         } else {
           statusLine.classList.add('status-line-warn');
-          statusLine.textContent = '⚠ Llegó incompleto: falta algún producto por recibir.';
+          statusLine.textContent = '⚠ Llegó incompleto: te faltó algún producto.';
         }
         detail.appendChild(statusLine);
 
         if (histReceived.length > 0) {
           const note = document.createElement('p');
           note.className = 'text-sm text-muted';
-          note.textContent = 'Llegó es el total recibido para todo el equipo, no solo lo tuyo. El precio y tu total son los de ese momento, aunque hayan cambiado después.';
+          note.textContent = 'El precio y tus totales son los de ese momento, aunque hayan cambiado después. Si un producto no alcanzó para todo el equipo, tu administrador asigna cuánto te tocó a vos.';
           detail.appendChild(note);
         }
 
-        // Totales del período: lo que pedí (a precio congelado) y una
-        // estimación de lo que me llegó a mí. La recepción se registra por
-        // producto para TODO el equipo, no por persona, así que cuando no
-        // llegó el 100% de un producto, prorrateamos según cuánto pedí yo.
+        // Totales del período: lo que pedí (a precio congelado) y lo que
+        // efectivamente me llegó a mí (no una estimación: si hace falta
+        // asignación y todavía no se hizo, ese producto queda afuera del
+        // total y se avisa aparte).
         let myPeriodTotalPedido = 0;
         let myPeriodTotalLlegado = 0;
         let myPeriodTotalKnown = false;
-        let anyProportional = false;
+        let anyPendingCost = false;
 
-        for (const { item, product, received, hasReceived, complete } of mineWithStatus) {
+        for (const { item, product, received, hasReceived, arrived, complete } of mineWithStatus) {
           // Ojo: <section>, no <div> — esto se inserta dentro de
           // .consolidated-row-detail, y esa regla le pone display:flex a
           // CUALQUIER <div> hijo (rompía el layout: nombre y stats quedaban
@@ -370,26 +385,29 @@ function renderMyHistory(orders) {
 
           statsEl.appendChild(buildHistStat('Pedido', String(item.quantity)));
 
-          if (hasReceived) {
+          if (arrived.state === 'known') {
             statsEl.appendChild(
-              buildHistStat('Llegó', `${received.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`, complete ? 'ok' : 'warn')
+              buildHistStat('Llegó', `${arrived.quantity}${complete ? ' ✓' : ' ⚠'}`, complete ? 'ok' : 'warn')
             );
+          } else if (arrived.state === 'pending') {
+            statsEl.appendChild(buildHistStat('Llegó', 'Pendiente', 'muted'));
           } else {
             statsEl.appendChild(buildHistStat('Llegó', '—', 'muted'));
           }
 
           if (typeof received?.unitPrice === 'number') {
             statsEl.appendChild(buildHistStat('Precio', formatPrice(received.unitPrice)));
-            const myTotal = item.quantity * received.unitPrice;
-            myPeriodTotalPedido += myTotal;
+            const myOrderCost = item.quantity * received.unitPrice;
+            myPeriodTotalPedido += myOrderCost;
             myPeriodTotalKnown = true;
-            statsEl.appendChild(buildHistStat('Mi total', formatPrice(myTotal), complete ? 'ok' : 'warn'));
+            statsEl.appendChild(
+              buildHistStat('Mi total', formatPrice(myOrderCost), complete ? 'ok' : arrived.state === 'pending' ? 'muted' : 'warn')
+            );
 
-            if (hasReceived) {
-              const totalRequested = totalRequestedByProduct.get(item.productId) || item.quantity;
-              const portion = totalRequested > 0 ? Math.min(1, received.receivedQuantity / totalRequested) : 0;
-              myPeriodTotalLlegado += item.quantity * portion * received.unitPrice;
-              if (!complete) anyProportional = true;
+            if (arrived.state === 'known') {
+              myPeriodTotalLlegado += arrived.quantity * received.unitPrice;
+            } else if (arrived.state === 'pending') {
+              anyPendingCost = true;
             }
           } else {
             statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));
@@ -414,7 +432,7 @@ function renderMyHistory(orders) {
           )}</span>`;
 
           const llegadoRow = document.createElement('div');
-          llegadoRow.innerHTML = `<span>Total que llegó${anyProportional ? ' (estimado)' : ''}</span><span class="order-total-value">${escapeHtml(
+          llegadoRow.innerHTML = `<span>Total que llegó${anyPendingCost ? ' (parcial)' : ''}</span><span class="order-total-value">${escapeHtml(
             formatPrice(myPeriodTotalLlegado)
           )}</span>`;
 
@@ -422,12 +440,12 @@ function renderMyHistory(orders) {
           totalWrap.appendChild(llegadoRow);
           detail.appendChild(totalWrap);
 
-          if (anyProportional) {
-            const estimateNote = document.createElement('p');
-            estimateNote.className = 'text-sm text-muted mt-4';
-            estimateNote.textContent =
-              'La recepción se registra por producto para todo el equipo, no por persona: "Total que llegó" es una estimación proporcional a lo que pediste, no la cantidad exacta de tus unidades que llegaron.';
-            detail.appendChild(estimateNote);
+          if (anyPendingCost) {
+            const pendingNote = document.createElement('p');
+            pendingNote.className = 'text-sm text-muted mt-4';
+            pendingNote.textContent =
+              'Todavía falta que tu administrador asigne cuánto te llegó de algún producto: ese producto no está incluido en "Total que llegó" por ahora.';
+            detail.appendChild(pendingNote);
           }
         }
       } catch (err) {
@@ -442,6 +460,25 @@ function renderMyHistory(orders) {
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/**
+ * Cuánto de un producto me llegó A MÍ (no al equipo). La recepción se
+ * registra por producto para todo el equipo, así que:
+ * - si nadie registró recepción todavía → 'none'.
+ * - si llegó >= lo que pidió TODO el equipo → seguro que llegó lo mío entero.
+ * - si solo yo pedí ese producto → lo que llegó es, por descarte, todo mío.
+ * - si llegó menos y lo pidió más de una persona → hace falta que el admin
+ *   asigne a mano cuánto le toca a cada quien (allocations); hasta que lo
+ *   haga, queda 'pending' (no inventamos un número).
+ */
+function resolveMyArrived(received, myQuantity, totalRequested, requesterCount) {
+  if (!received || typeof received.receivedQuantity !== 'number') return { state: 'none' };
+  if (received.receivedQuantity >= totalRequested) return { state: 'known', quantity: myQuantity };
+  if (requesterCount <= 1) return { state: 'known', quantity: received.receivedQuantity };
+  const allocations = received.allocations || {};
+  if (typeof allocations[user.uid] === 'number') return { state: 'known', quantity: allocations[user.uid] };
+  return { state: 'pending' };
 }
 
 function formatPrice(price) {

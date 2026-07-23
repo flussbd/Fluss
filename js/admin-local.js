@@ -11,6 +11,7 @@ import {
   listenInvitesOfSalon,
   createOrder,
   startReview,
+  reopenDraft,
   closeOrder,
   setAdjustment,
   addCategory,
@@ -172,7 +173,23 @@ function renderActionsBar() {
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
     bar.appendChild(makeButton('Descargar Excel', 'btn-secondary', () => downloadOrderXlsx()));
     bar.appendChild(makeButton('Descargar por proveedor', 'btn-secondary', () => openProviderExportModal()));
+    bar.appendChild(makeButton('Reabrir para agregar insumos', 'btn-secondary', handleReopenDraft));
     bar.appendChild(makeButton('Cerrar período y enviar', 'btn-accent', handleCloseFortnight));
+  }
+}
+
+async function handleReopenDraft() {
+  const endOfPeriod = getPeriodEndDate(order);
+  const pastDeadline = endOfPeriod && new Date() > endOfPeriod;
+  const warn = pastDeadline
+    ? '\n\nOjo: la fecha/hora de cierre de este período ya pasó, así que se va a volver a cerrar solo apenas alguien tenga el panel abierto unos segundos (o lo vuelva a abrir).'
+    : '';
+  if (!confirm(`¿Reabrir este período para que el equipo pueda seguir agregando o corrigiendo insumos?${warn}`)) return;
+  try {
+    await reopenDraft(profile.salonId, order.id);
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo reabrir el período. Probá de nuevo.');
   }
 }
 

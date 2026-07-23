@@ -201,6 +201,11 @@ export function startReview(salonId, orderId) {
   return updateDoc(orderRef(salonId, orderId), { status: 'reviewing' });
 }
 
+/** Vuelve un pedido "en revisión" a borrador, por si faltó agregar algo antes del cierre final. */
+export function reopenDraft(salonId, orderId) {
+  return updateDoc(orderRef(salonId, orderId), { status: 'draft' });
+}
+
 export function closeOrder(salonId, orderId, adminUid) {
   return updateDoc(orderRef(salonId, orderId), {
     status: 'completed',

@@ -162,7 +162,8 @@ function updateOrderUI() {
   statusBadgeEl.classList.remove('hidden');
   statusBadgeEl.textContent = STATUS_LABEL[order.status];
   statusBadgeEl.className = `badge badge-${order.status}`;
-  periodLabelEl.textContent = `Período: ${formatPeriod(order)}`;
+  periodLabelEl.textContent =
+    `Período: ${formatPeriod(order)}` + (order.status === 'draft' && order.periodEndTime ? ` · cierra ${order.periodEndTime}` : '');
   closedAlertEl.classList.toggle('hidden', order.status === 'draft');
 }
 

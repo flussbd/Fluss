@@ -185,11 +185,12 @@ export function unsubmitMyOrder(salonId, orderId, uid) {
 // ---------------------------------------------------------------------------
 // Escrituras — administrador local
 // ---------------------------------------------------------------------------
-export async function createOrder(salonId, periodStart, periodEnd) {
+export async function createOrder(salonId, periodStart, periodEnd, periodEndTime = '23:59') {
   return addDoc(ordersCol(salonId), {
     status: 'draft',
     periodStart, // string 'YYYY-MM-DD', la define el admin local
     periodEnd,
+    periodEndTime: periodEndTime || '23:59', // string 'HH:MM', hora del cierre automático
     closedAt: null,
     closedBy: null,
     createdAt: serverTimestamp(),

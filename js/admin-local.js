@@ -139,7 +139,8 @@ function renderDashboard() {
 
   if (!order) return;
 
-  document.getElementById('periodLabel').textContent = formatPeriod(order);
+  document.getElementById('periodLabel').textContent =
+    formatPeriod(order) + (order.status === 'draft' && order.periodEndTime ? ` · cierra ${order.periodEndTime}` : '');
   const badge = document.getElementById('statusBadge');
   badge.textContent = STATUS_LABEL[order.status];
   badge.className = `badge badge-${order.status}`;
@@ -284,6 +285,7 @@ function setupPeriodModal() {
   document.getElementById('periodConfirmBtn').addEventListener('click', async () => {
     const start = document.getElementById('periodStartInput').value;
     const end = document.getElementById('periodEndInput').value;
+    const endTime = document.getElementById('periodEndTimeInput').value || '23:59';
     if (!start || !end) {
       alert('Completá las dos fechas.');
       return;
@@ -292,7 +294,7 @@ function setupPeriodModal() {
       alert('La fecha "Hasta" no puede ser anterior a "Desde".');
       return;
     }
-    await createOrder(profile.salonId, start, end);
+    await createOrder(profile.salonId, start, end, endTime);
     modal.hidden = true;
   });
 }
@@ -302,10 +304,18 @@ function setupPeriodModal() {
 // admin abre su panel — si ya pasó la fecha de fin y el pedido sigue en
 // borrador, se cierra solo (mismo efecto que el botón manual). No archiva ni
 // envía el pedido: eso sigue siendo una acción manual del admin.
+/** Fecha/hora exacta de cierre: el admin la define al abrir el pedido (por defecto 23:59). */
+function getPeriodEndDate(o) {
+  if (!o?.periodEnd) return null;
+  const time = /^\d{2}:\d{2}$/.test(o.periodEndTime || '') ? o.periodEndTime : '23:59';
+  const d = new Date(`${o.periodEnd}T${time}:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function maybeAutoCloseDraft() {
-  if (!order || order.status !== 'draft' || !order.periodEnd) return;
-  const endOfPeriod = new Date(`${order.periodEnd}T23:59:59`);
-  if (Number.isNaN(endOfPeriod.getTime())) return;
+  if (!order || order.status !== 'draft') return;
+  const endOfPeriod = getPeriodEndDate(order);
+  if (!endOfPeriod) return;
   if (new Date() > endOfPeriod) {
     startReview(profile.salonId, order.id).catch(console.error);
   }
@@ -330,12 +340,12 @@ function startAutoCloseTicker() {
 function updateAutoCloseCountdown() {
   const el = document.getElementById('autoCloseCountdown');
   if (!el) return;
-  if (!order || order.status !== 'draft' || !order.periodEnd) {
+  if (!order || order.status !== 'draft') {
     el.classList.add('hidden');
     return;
   }
-  const endOfPeriod = new Date(`${order.periodEnd}T23:59:59`);
-  if (Number.isNaN(endOfPeriod.getTime())) {
+  const endOfPeriod = getPeriodEndDate(order);
+  if (!endOfPeriod) {
     el.classList.add('hidden');
     return;
   }

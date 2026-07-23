@@ -1224,7 +1224,7 @@ function renderHistory(orders) {
 
         function renderDetailViews() {
           const ctx = o.receptionFinalized ? null : { salonId: profile.salonId, orderId: o.id, adminUid: user.uid };
-          renderHistProductView(productSection, productGroups, categoryById, ctx);
+          renderHistProductView(productSection, productGroups, categoryById, userById, ctx);
           renderHistUserView(userSection, userGroups, categoryById, userById, receivedByProduct);
         }
 
@@ -1351,6 +1351,26 @@ function buildReceivedByProductMap(groups) {
   return map;
 }
 
+/** "Cargado por X el 12 jul." — quién y cuándo se registró la recepción de una línea puntual. */
+function receivedMetaEl(uid, when, userById) {
+  const p = document.createElement('p');
+  p.className = 'text-sm text-muted';
+  setReceivedMetaText(p, uid, when, userById);
+  return p;
+}
+
+function setReceivedMetaText(el, uid, when, userById) {
+  if (!uid) {
+    el.textContent = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  const name = userById.get(uid)?.name || 'alguien';
+  const dateText = when ? when.toLocaleDateString('es') : 'recién';
+  el.textContent = `Cargado por ${name} el ${dateText}`;
+}
+
 /** Mapea (hasReceived, diff) a un tono visual — mismo criterio en toda la vista. */
 function diffToneFor(hasReceived, diff) {
   return { 'receipt-diff-ok': 'ok', 'receipt-diff-short': 'warn', 'receipt-diff-over': 'warn', 'receipt-diff-pending': 'muted' }[
@@ -1367,7 +1387,7 @@ function diffToneFor(hasReceived, diff) {
  * cuánto le llegó a cada quien ES la acción, así que nunca queda un estado
  * intermedio de "pendiente de asignación".
  */
-function renderHistProductView(container, groups, categoryById, ctx = null) {
+function renderHistProductView(container, groups, categoryById, userById = new Map(), ctx = null) {
   container.innerHTML = '';
   if (groups.length === 0) {
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
@@ -1466,6 +1486,15 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
 
         costEntry.recibidoCost = knownPrice !== null && hasReceived ? b.receivedQuantity * knownPrice : 0;
 
+        const metaEl = receivedMetaEl(
+          b.receivedUpdatedBy,
+          b.receivedUpdatedAt?.toDate ? b.receivedUpdatedAt.toDate() : null,
+          userById
+        );
+        row.appendChild(statsEl);
+        row.appendChild(metaEl);
+        container.appendChild(row);
+
         if (ctx) {
           input.addEventListener('click', (e) => e.stopPropagation());
           input.addEventListener('change', () => {
@@ -1482,6 +1511,7 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
                 const d = value - item.totalQuantity;
                 diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
                 diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
+                setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
                 if (unitPrice !== null) {
                   costEntry.pedidoCost = item.totalQuantity * unitPrice;
                   costEntry.recibidoCost = value * unitPrice;
@@ -1491,6 +1521,7 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
               .catch(console.error);
           });
         }
+        continue; // ya insertamos row arriba, no repetir abajo
       } else {
         // Varias personas pidieron este producto: "Recibido"/"Diferencia"
         // acá arriba son de solo lectura, la suma de lo que se cargue por
@@ -1550,6 +1581,14 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
           personRow.appendChild(input);
           peopleWrap.appendChild(personRow);
 
+          const metaEl = receivedMetaEl(
+            b.receivedUpdatedBy,
+            b.receivedUpdatedAt?.toDate ? b.receivedUpdatedAt.toDate() : null,
+            userById
+          );
+          metaEl.style.marginTop = '-4px';
+          peopleWrap.appendChild(metaEl);
+
           if (ctx) {
             input.addEventListener('click', (e) => e.stopPropagation());
             input.addEventListener('change', () => {
@@ -1560,6 +1599,7 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
                 .then(() => {
                   b.receivedQuantity = value;
                   b.receivedUnitPrice = unitPrice;
+                  setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
                   refreshAggregate();
                 })
                 .catch(console.error);
@@ -1569,9 +1609,6 @@ function renderHistProductView(container, groups, categoryById, ctx = null) {
         container.appendChild(peopleWrap);
         continue; // ya insertamos row y peopleWrap arriba, no repetir abajo
       }
-
-      row.appendChild(statsEl);
-      container.appendChild(row);
     }
   }
 

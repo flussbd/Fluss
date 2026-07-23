@@ -96,9 +96,19 @@ describe('consolidateByProduct', () => {
     expect(p1Entry.breakdown).toHaveLength(2);
   });
 
-  it('cada línea del breakdown trae receivedQuantity/receivedUnitPrice (null si no se cargó)', () => {
+  it('cada línea del breakdown trae los datos de recepción (null si no se cargó)', () => {
     const items = [
-      { productId: 'p1', userId: 'u1', userName: 'Ana', quantity: 2, notes: '', receivedQuantity: 2, receivedUnitPrice: 4500 },
+      {
+        productId: 'p1',
+        userId: 'u1',
+        userName: 'Ana',
+        quantity: 2,
+        notes: '',
+        receivedQuantity: 2,
+        receivedUnitPrice: 4500,
+        receivedUpdatedBy: 'admin1',
+        receivedUpdatedAt: 'timestamp-fake',
+      },
       { productId: 'p1', userId: 'u2', userName: 'Bea', quantity: 3, notes: '' },
     ];
     const result = consolidateByProduct(items, products, categories);
@@ -107,8 +117,12 @@ describe('consolidateByProduct', () => {
     const bea = p1Entry.breakdown.find((b) => b.userId === 'u2');
     expect(ana.receivedQuantity).toBe(2);
     expect(ana.receivedUnitPrice).toBe(4500);
+    expect(ana.receivedUpdatedBy).toBe('admin1');
+    expect(ana.receivedUpdatedAt).toBe('timestamp-fake');
     expect(bea.receivedQuantity).toBeNull();
     expect(bea.receivedUnitPrice).toBeNull();
+    expect(bea.receivedUpdatedBy).toBeNull();
+    expect(bea.receivedUpdatedAt).toBeNull();
   });
 
   it('aplica el ajuste del admin por encima de lo solicitado', () => {

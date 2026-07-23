@@ -50,6 +50,8 @@ export function consolidateByProduct(items, products, categories, adjustments = 
       // se deriva sumando esto cuando hace falta (ver admin-local.js).
       receivedQuantity: typeof item.receivedQuantity === 'number' ? item.receivedQuantity : null,
       receivedUnitPrice: typeof item.receivedUnitPrice === 'number' ? item.receivedUnitPrice : null,
+      receivedUpdatedBy: item.receivedUpdatedBy || null,
+      receivedUpdatedAt: item.receivedUpdatedAt || null,
     });
     byProduct.set(product.id, entry);
   }

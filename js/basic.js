@@ -511,7 +511,7 @@ function buildProductCard(product, local) {
   } else {
     shadeChipEl.classList.add('hidden');
   }
-  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.format, product.supplierName]
+  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.format]
     .filter(Boolean)
     .join(' · ');
   const priceEl = node.querySelector('.product-price');

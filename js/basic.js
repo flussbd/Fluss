@@ -14,6 +14,8 @@ import {
   compareProductsByShade,
 } from './db.js';
 import { formatPrice, escapeHtml } from './pure.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db } from './firebase-init.js';
 
 const STATUS_LABEL = {
   draft: 'Abierto para agregar',
@@ -67,6 +69,9 @@ async function init() {
   const auth = await requireRole(['basic']);
   user = auth.user;
   profile = auth.profile;
+
+  const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
+  if (salonSnap.exists()) document.getElementById('salonName').textContent = salonSnap.data().name;
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     await logout();

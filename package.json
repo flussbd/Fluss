@@ -4,9 +4,19 @@
   "type": "module",
   "description": "Tests de Fluss (Vitest). No es un build step de la app: la app sigue siendo HTML/JS plano, esto es solo tooling de desarrollo.",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --project demo-fluss --only firestore \"vitest run tests/firestore.rules.test.js\""
   },
   "devDependencies": {
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.29.1"
+  },
+  "allowScripts": {
+    "@firebase/util@1.12.1": true,
+    "esbuild@0.21.5": true,
+    "protobufjs@7.6.5": true,
+    "re2@1.26.1": true
   }
 }

@@ -10,7 +10,7 @@ import {
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
-  it('formatea un número como pesos argentinos sin decimales', () => {
+  it('formatea un número como pesos chilenos sin decimales', () => {
     // Normalizamos espacios (algunos motores ICU insertan un espacio o
     // espacio-fino entre el símbolo y el número) para no acoplar el test
     // al detalle de tipografía del entorno donde corre.

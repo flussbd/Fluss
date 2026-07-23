@@ -88,10 +88,10 @@ export function consolidateByUser(items, products) {
     .sort((a, b) => a.userName.localeCompare(b.userName));
 }
 
-/** Formatea un precio en pesos argentinos, sin decimales. '' si no es un número válido. */
+/** Formatea un precio en pesos chilenos, sin decimales. '' si no es un número válido. */
 export function formatPrice(price) {
   if (typeof price !== 'number' || Number.isNaN(price)) return '';
-  return price.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 });
+  return price.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0 });
 }
 
 /** Escapa HTML antes de insertarlo con innerHTML (evita inyección de HTML desde nombres/notas). */

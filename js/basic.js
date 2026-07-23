@@ -347,7 +347,11 @@ function renderMyHistory(orders) {
         let myPeriodTotalKnown = false;
 
         for (const { item, product, received, hasReceived, complete } of mineWithStatus) {
-          const row = document.createElement('div');
+          // Ojo: <section>, no <div> — esto se inserta dentro de
+          // .consolidated-row-detail, y esa regla le pone display:flex a
+          // CUALQUIER <div> hijo (rompía el layout: nombre y stats quedaban
+          // en la misma línea en vez de uno debajo del otro).
+          const row = document.createElement('section');
           row.className = 'hist-item';
           const meta = [product.brand, product.format].filter(Boolean).join(' · ');
           const noteSuffix = item.notes ? ` — ${item.notes}` : '';
@@ -357,7 +361,7 @@ function renderMyHistory(orders) {
           nameEl.textContent = `${product.name}${meta ? ' — ' + meta : ''}${noteSuffix}`;
           row.appendChild(nameEl);
 
-          const statsEl = document.createElement('div');
+          const statsEl = document.createElement('section');
           statsEl.className = 'hist-item-stats';
 
           statsEl.appendChild(buildHistStat('Pedido', String(item.quantity)));
@@ -386,7 +390,7 @@ function renderMyHistory(orders) {
         }
 
         if (myPeriodTotalKnown) {
-          const totalRow = document.createElement('div');
+          const totalRow = document.createElement('section');
           totalRow.className = 'order-total mt-4';
           totalRow.innerHTML = `<span>Mi total del período</span><span class="order-total-value">${escapeHtml(
             formatPrice(myPeriodTotal)
@@ -414,7 +418,7 @@ function formatPrice(price) {
 
 /** Construye una columna label+valor para la grilla de detalle del Historial. */
 function buildHistStat(label, value, tone = null) {
-  const wrap = document.createElement('div');
+  const wrap = document.createElement('section');
   wrap.className = 'hist-stat';
   const labelEl = document.createElement('span');
   labelEl.className = 'hist-stat-label';

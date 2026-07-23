@@ -257,16 +257,34 @@ function renderByUserView(userGroups) {
     h3.textContent = userById.get(group.userId)?.name || group.userName;
     wrap.appendChild(h3);
     const ul = document.createElement('ul');
+    let userTotal = 0;
+    let anyPriceKnown = false;
     for (const it of group.items) {
       const li = document.createElement('li');
       const noteSuffix = it.notes ? ` — ${it.notes}` : '';
       const label = [categoryById.get(it.product.categoryId)?.name, it.product.brand, it.product.name]
         .filter(Boolean)
         .join(' · ');
-      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
+      const price = typeof it.product.price === 'number' ? it.product.price : null;
+      const qtyText = price !== null ? `${it.quantity} unidades · ${formatPrice(price)} c/u` : `${it.quantity} unidades`;
+      if (price !== null) {
+        userTotal += it.quantity * price;
+        anyPriceKnown = true;
+      }
+      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${escapeHtml(qtyText)}</span>`;
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
+
+    if (anyPriceKnown) {
+      // Es de solo lectura a propósito: acá no se puede tocar la
+      // cantidad, eso solo se ajusta desde la vista Consolidado.
+      const totalRow = document.createElement('div');
+      totalRow.className = 'order-total mt-4';
+      totalRow.innerHTML = `<span>Total</span><span class="order-total-value">${escapeHtml(formatPrice(userTotal))}</span>`;
+      wrap.appendChild(totalRow);
+    }
+
     container.appendChild(wrap);
   }
 }

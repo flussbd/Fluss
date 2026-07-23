@@ -420,6 +420,15 @@ h1, h2, h3 {
   gap: 10px;
 }
 
+/* min-width:0 es lo que deja que este bloque se achique de verdad dentro
+   del flex row de la tarjeta — sin esto, un código largo sin espacios
+   (ej. "COCEM0000001070") no tiene dónde cortar y empuja el stepper +/-
+   fuera de lugar en las columnas angostas del layout de escritorio. */
+.product-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
 .product-name-row {
   display: flex;
   align-items: center;
@@ -430,6 +439,7 @@ h1, h2, h3 {
 .product-name {
   font-weight: 600;
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 /* Código de tono como ficha de color aparte — así lo lee un colorista en
@@ -437,7 +447,10 @@ h1, h2, h3 {
 .shade-chip {
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -891,8 +904,16 @@ h1, h2, h3 {
   margin-bottom: 8px;
 }
 
+/* Mismo motivo que .product-card-info: sin esto, un email o código largo
+   puede empujar los botones de acción de la fila en vez de acomodarse. */
+.list-row > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
 .list-row-title {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .list-row-sub {

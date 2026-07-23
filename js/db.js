@@ -32,9 +32,6 @@ const adjustmentsCol = (salonId, orderId) => collection(db, 'salons', salonId, '
 const adjustmentRef = (salonId, orderId, productId) =>
   doc(db, 'salons', salonId, 'orders', orderId, 'adjustments', productId);
 const submissionRef = (salonId, orderId, uid) => doc(db, 'salons', salonId, 'orders', orderId, 'submissions', uid);
-const receivedCol = (salonId, orderId) => collection(db, 'salons', salonId, 'orders', orderId, 'received');
-const receivedRef = (salonId, orderId, productId) =>
-  doc(db, 'salons', salonId, 'orders', orderId, 'received', productId);
 
 // ---------------------------------------------------------------------------
 // Suscripciones en tiempo real (catálogo se ve "sin escribir": categorías +
@@ -72,49 +69,37 @@ export function listenOrderItems(salonId, orderId, cb) {
   return onSnapshot(itemsCol(salonId, orderId), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
-/** Trae una sola vez los ítems, ajustes y recepción de un pedido ya cerrado (para el detalle del historial). */
+/** Trae una sola vez los ítems y ajustes de un pedido ya cerrado (para el detalle del historial). */
 export async function getOrderDetail(salonId, orderId) {
-  const [itemsSnap, adjustmentsSnap, receivedSnap] = await Promise.all([
+  const [itemsSnap, adjustmentsSnap] = await Promise.all([
     getDocs(itemsCol(salonId, orderId)),
     getDocs(adjustmentsCol(salonId, orderId)),
-    getDocs(receivedCol(salonId, orderId)),
   ]);
   return {
     items: itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     adjustments: adjustmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    received: receivedSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
   };
 }
 
 /**
- * Registra cuánto llegó realmente de un producto para un pedido ya archivado.
- * Guarda también el precio unitario vigente en ESE momento (unitPrice): como
- * el precio del producto puede cambiar después, esto "congela" cuánto costó
- * ese pedido puntual en vez de recalcularlo con el precio actualizado.
+ * Registra cuánto le llegó realmente a UNA persona de UN producto, directo
+ * en su línea de pedido (items/{uid}_{productId}). Reemplaza el viejo
+ * esquema de una colección "received" aparte por producto + un mapa de
+ * asignación manual: ahora la recepción se carga por persona desde el
+ * vamos, así que nunca hace falta "repartir" un número después.
+ * Guarda también el precio unitario vigente en ESE momento (congelado): como
+ * el precio del producto puede cambiar después, esto fija cuánto costó ese
+ * pedido puntual en vez de recalcularlo con el precio actualizado.
+ * merge:true para no pisar el resto del documento (productId/userId/etc.).
  */
-export function setReceivedQuantity(salonId, orderId, productId, quantity, adminUid, unitPrice = null) {
-  return setDoc(receivedRef(salonId, orderId, productId), {
-    receivedQuantity: quantity,
-    unitPrice: typeof unitPrice === 'number' && !Number.isNaN(unitPrice) ? unitPrice : null,
-    updatedBy: adminUid,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-/**
- * Cuando lo que llegó de un producto no alcanza para cubrir a todo el
- * equipo, el admin asigna a mano cuánto le corresponde a cada persona
- * (mapa userId -> cantidad). Se guarda en el mismo documento de recepción,
- * sin tocar receivedQuantity/unitPrice, para que cada usuario básico vea
- * en su Historial exactamente cuánto le llegó a él (no una estimación).
- */
-export function setReceivedAllocations(salonId, orderId, productId, allocations, adminUid) {
+export function setItemReceivedQuantity(salonId, orderId, uid, productId, quantity, adminUid, unitPrice = null) {
   return setDoc(
-    receivedRef(salonId, orderId, productId),
+    itemRef(salonId, orderId, uid, productId),
     {
-      allocations,
-      allocationsUpdatedBy: adminUid,
-      allocationsUpdatedAt: serverTimestamp(),
+      receivedQuantity: quantity,
+      receivedUnitPrice: typeof unitPrice === 'number' && !Number.isNaN(unitPrice) ? unitPrice : null,
+      receivedUpdatedBy: adminUid,
+      receivedUpdatedAt: serverTimestamp(),
     },
     { merge: true }
   );
@@ -167,14 +152,20 @@ export async function setMyItem(salonId, orderId, uid, userName, productId, quan
     await deleteDoc(ref);
     return;
   }
-  await setDoc(ref, {
-    productId,
-    userId: uid,
-    userName,
-    quantity,
-    notes: notes || null,
-    updatedAt: serverTimestamp(),
-  });
+  // merge:true: si el admin reabrió un borrador después de haber cargado
+  // recepción (receivedQuantity), editar la cantidad acá no debe borrarla.
+  await setDoc(
+    ref,
+    {
+      productId,
+      userId: uid,
+      userName,
+      quantity,
+      notes: notes || null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
 
 /** Existe o no un doc en submissions/{uid}: existe = esa persona ya "cerró" su pedido. */

@@ -45,6 +45,11 @@ export function consolidateByProduct(items, products, categories, adjustments = 
       userName: item.userName,
       quantity: item.quantity,
       notes: item.notes,
+      // Recepción de ESTA línea puntual (persona + producto), null si
+      // todavía no se cargó. Ya no existe un total "por producto" separado:
+      // se deriva sumando esto cuando hace falta (ver admin-local.js).
+      receivedQuantity: typeof item.receivedQuantity === 'number' ? item.receivedQuantity : null,
+      receivedUnitPrice: typeof item.receivedUnitPrice === 'number' ? item.receivedUnitPrice : null,
     });
     byProduct.set(product.id, entry);
   }
@@ -104,23 +109,4 @@ export function receiptDiffClass(hasReceived, diff) {
   if (!hasReceived) return 'receipt-diff-pending';
   if (diff === 0) return 'receipt-diff-ok';
   return diff < 0 ? 'receipt-diff-short' : 'receipt-diff-over';
-}
-
-/**
- * Cuánto de un producto le llegó a UN usuario puntual (no al equipo). La
- * recepción se registra por producto para todo el equipo, así que:
- * - si nadie registró recepción todavía → 'none'.
- * - si llegó >= lo que pidió TODO el equipo → seguro que llegó lo suyo entero.
- * - si esa persona era la única que lo pidió → lo que llegó es, por descarte, todo suyo.
- * - si llegó menos y lo pidió más de una persona → hace falta que el admin
- *   asigne a mano cuánto le toca a cada quien (allocations); hasta que lo
- *   haga, queda 'pending' (no se inventa un número).
- */
-export function resolveMyArrived(received, myQuantity, totalRequested, requesterCount, myUid) {
-  if (!received || typeof received.receivedQuantity !== 'number') return { state: 'none' };
-  if (received.receivedQuantity >= totalRequested) return { state: 'known', quantity: myQuantity };
-  if (requesterCount <= 1) return { state: 'known', quantity: received.receivedQuantity };
-  const allocations = received.allocations || {};
-  if (typeof allocations[myUid] === 'number') return { state: 'known', quantity: allocations[myUid] };
-  return { state: 'pending' };
 }

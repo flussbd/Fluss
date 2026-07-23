@@ -6,7 +6,6 @@ import {
   formatPrice,
   escapeHtml,
   receiptDiffClass,
-  resolveMyArrived,
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
@@ -97,6 +96,21 @@ describe('consolidateByProduct', () => {
     expect(p1Entry.breakdown).toHaveLength(2);
   });
 
+  it('cada línea del breakdown trae receivedQuantity/receivedUnitPrice (null si no se cargó)', () => {
+    const items = [
+      { productId: 'p1', userId: 'u1', userName: 'Ana', quantity: 2, notes: '', receivedQuantity: 2, receivedUnitPrice: 4500 },
+      { productId: 'p1', userId: 'u2', userName: 'Bea', quantity: 3, notes: '' },
+    ];
+    const result = consolidateByProduct(items, products, categories);
+    const p1Entry = result[0].items.find((e) => e.product.id === 'p1');
+    const ana = p1Entry.breakdown.find((b) => b.userId === 'u1');
+    const bea = p1Entry.breakdown.find((b) => b.userId === 'u2');
+    expect(ana.receivedQuantity).toBe(2);
+    expect(ana.receivedUnitPrice).toBe(4500);
+    expect(bea.receivedQuantity).toBeNull();
+    expect(bea.receivedUnitPrice).toBeNull();
+  });
+
   it('aplica el ajuste del admin por encima de lo solicitado', () => {
     const items = [{ productId: 'p1', userId: 'u1', userName: 'Ana', quantity: 2, notes: '' }];
     const adjustments = [{ id: 'p1', adjustedQuantity: 10 }];
@@ -127,31 +141,5 @@ describe('consolidateByUser', () => {
     const result = consolidateByUser(items, products);
     expect(result.map((u) => u.userName)).toEqual(['Ana', 'Bea']);
     expect(result[0].items[0].quantity).toBe(2);
-  });
-});
-
-describe('resolveMyArrived', () => {
-  it('devuelve "none" si nadie registró recepción', () => {
-    expect(resolveMyArrived(null, 2, 5, 2, 'u1')).toEqual({ state: 'none' });
-  });
-
-  it('devuelve "known" con la cantidad pedida si llegó todo lo del equipo', () => {
-    const received = { receivedQuantity: 5 };
-    expect(resolveMyArrived(received, 2, 5, 2, 'u1')).toEqual({ state: 'known', quantity: 2 });
-  });
-
-  it('devuelve "known" con lo recibido si esta persona era la única que pidió', () => {
-    const received = { receivedQuantity: 3 };
-    expect(resolveMyArrived(received, 5, 5, 1, 'u1')).toEqual({ state: 'known', quantity: 3 });
-  });
-
-  it('devuelve "known" usando la asignación manual del admin cuando hay varios pidiendo y llegó menos', () => {
-    const received = { receivedQuantity: 3, allocations: { u1: 1, u2: 2 } };
-    expect(resolveMyArrived(received, 2, 5, 2, 'u1')).toEqual({ state: 'known', quantity: 1 });
-  });
-
-  it('devuelve "pending" si llegó menos, hay varios pidiendo, y el admin no asignó todavía', () => {
-    const received = { receivedQuantity: 3 };
-    expect(resolveMyArrived(received, 2, 5, 2, 'u1')).toEqual({ state: 'pending' });
   });
 });

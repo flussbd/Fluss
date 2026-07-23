@@ -20,8 +20,7 @@ import {
   updateProduct,
   deactivateProduct,
   activateProduct,
-  setReceivedQuantity,
-  setReceivedAllocations,
+  setItemReceivedQuantity,
   createInvite,
   updateUserName,
   consolidateByProduct,
@@ -1144,18 +1143,15 @@ function renderHistory(orders) {
       loaded = true;
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
-        const { items: histItems, adjustments: histAdjustments, received: histReceived } = await getOrderDetail(
-          profile.salonId,
-          o.id
-        );
+        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(profile.salonId, o.id);
         const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
         const userGroups = consolidateByUser(histItems, products);
-        const receivedByProduct = new Map(
-          histReceived.map((r) => [
-            r.id,
-            { receivedQuantity: r.receivedQuantity, unitPrice: r.unitPrice ?? null, allocations: r.allocations || {} },
-          ])
-        );
+        // La recepción ya no vive en una colección aparte: se deriva sumando
+        // receivedQuantity de cada línea (item.breakdown, que ya viene con
+        // ese dato desde consolidateByProduct). Mismo formato {receivedQuantity,
+        // unitPrice} que antes, para no tocar las funciones de exportar a Excel.
+        const receivedByProduct = buildReceivedByProductMap(productGroups);
+        const anyReceived = histItems.some((i) => typeof i.receivedQuantity === 'number');
         detail.innerHTML = '';
 
         const topBar = document.createElement('section');
@@ -1228,13 +1224,13 @@ function renderHistory(orders) {
 
         function renderDetailViews() {
           const ctx = o.receptionFinalized ? null : { salonId: profile.salonId, orderId: o.id, adminUid: user.uid };
-          renderHistProductView(productSection, productGroups, categoryById, receivedByProduct, ctx);
+          renderHistProductView(productSection, productGroups, categoryById, ctx);
           renderHistUserView(userSection, userGroups, categoryById, userById, receivedByProduct);
         }
 
         function renderFinalizeControl() {
           finalizeWrap.innerHTML = '';
-          if (histReceived.length === 0 && !o.receptionFinalized) return; // nada que finalizar todavía
+          if (!anyReceived && !o.receptionFinalized) return; // nada que finalizar todavía
           if (o.receptionFinalized) {
             const badge = document.createElement('p');
             badge.className = 'text-sm status-line-ok';
@@ -1328,7 +1324,50 @@ function buildHistStatEl(label, value, tone = null) {
   return { wrap, valueEl };
 }
 
-function renderHistProductView(container, groups, categoryById, receivedByProduct = new Map(), ctx = null) {
+/**
+ * Deriva, a partir de item.breakdown[].receivedQuantity (que ya trae cada
+ * línea desde consolidateByProduct), un mapa productId -> {receivedQuantity,
+ * unitPrice} con el total del equipo. Mismo formato que antes usaba la
+ * colección "received" aparte, para que las funciones de exportar a Excel y
+ * la vista "Por usuario" del Historial no tengan que cambiar.
+ */
+function buildReceivedByProductMap(groups) {
+  const map = new Map();
+  for (const group of groups) {
+    for (const item of group.items) {
+      let sum = 0;
+      let any = false;
+      let unitPrice = null;
+      for (const b of item.breakdown) {
+        if (typeof b.receivedQuantity === 'number') {
+          sum += b.receivedQuantity;
+          any = true;
+          if (unitPrice === null && typeof b.receivedUnitPrice === 'number') unitPrice = b.receivedUnitPrice;
+        }
+      }
+      if (any) map.set(item.product.id, { receivedQuantity: sum, unitPrice });
+    }
+  }
+  return map;
+}
+
+/** Mapea (hasReceived, diff) a un tono visual — mismo criterio en toda la vista. */
+function diffToneFor(hasReceived, diff) {
+  return { 'receipt-diff-ok': 'ok', 'receipt-diff-short': 'warn', 'receipt-diff-over': 'warn', 'receipt-diff-pending': 'muted' }[
+    receiptDiffClass(hasReceived, diff)
+  ];
+}
+
+/**
+ * La recepción se guarda directo en cada línea de pedido (item.breakdown[].
+ * receivedQuantity), no más en una colección aparte por producto. Si un
+ * producto lo pidió una sola persona, es un solo input (igual que antes).
+ * Si lo pidieron varias, se ve un input por persona siempre — no hay un
+ * paso separado de "cuánto llegó en total" y después repartirlo: cargar
+ * cuánto le llegó a cada quien ES la acción, así que nunca queda un estado
+ * intermedio de "pendiente de asignación".
+ */
+function renderHistProductView(container, groups, categoryById, ctx = null) {
   container.innerHTML = '';
   if (groups.length === 0) {
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
@@ -1379,89 +1418,160 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       const statsEl = document.createElement('section');
       statsEl.className = 'hist-item-stats';
 
-      const received = receivedByProduct.get(item.product.id);
-      const hasReceived = !!received && typeof received.receivedQuantity === 'number';
-      const receivedRaw = hasReceived ? received.receivedQuantity : null;
-
       statsEl.appendChild(buildHistStatEl('Pedido', String(item.totalQuantity)).wrap);
 
-      // Precio "congelado" si ya hay recepción registrada; si no, el precio
-      // actual del producto (mismo criterio que usa el Excel).
-      const knownPrice = hasReceived && typeof received.unitPrice === 'number'
-        ? received.unitPrice
+      // Precio "congelado" apenas alguna línea ya tenga recepción registrada;
+      // si no, el precio actual del producto (mismo criterio que usa el Excel).
+      const frozen = item.breakdown.find((b) => typeof b.receivedUnitPrice === 'number');
+      const knownPrice = frozen
+        ? frozen.receivedUnitPrice
         : typeof item.product.price === 'number'
           ? item.product.price
           : null;
       if (knownPrice !== null) anyPriceKnown = true;
       statsEl.appendChild(buildHistStatEl('Precio', knownPrice !== null ? formatPrice(knownPrice) : '—', knownPrice === null ? 'muted' : null).wrap);
 
-      const recibidoWrap = document.createElement('section');
-      recibidoWrap.className = 'hist-stat';
-      const recibidoLabelEl = document.createElement('span');
-      recibidoLabelEl.className = 'hist-stat-label';
-      recibidoLabelEl.textContent = 'Recibido';
-      const input = document.createElement('input');
-      input.className = 'input receipt-input';
-      input.type = 'number';
-      input.min = '0';
-      input.placeholder = '0';
-      if (hasReceived) input.value = receivedRaw;
-      input.disabled = !ctx;
-      recibidoWrap.appendChild(recibidoLabelEl);
-      recibidoWrap.appendChild(input);
-      statsEl.appendChild(recibidoWrap);
-
-      const diffTone = { 'receipt-diff-ok': 'ok', 'receipt-diff-short': 'warn', 'receipt-diff-over': 'warn', 'receipt-diff-pending': 'muted' }[
-        receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)
-      ];
-      const diffText = hasReceived
-        ? receivedRaw - item.totalQuantity > 0
-          ? `+${receivedRaw - item.totalQuantity}`
-          : String(receivedRaw - item.totalQuantity)
-        : '—';
-      const { wrap: diffWrap, valueEl: diffValueEl } = buildHistStatEl('Diferencia', diffText, diffTone);
-      statsEl.appendChild(diffWrap);
-
-      const costEntry = {
-        pedidoCost: knownPrice !== null ? item.totalQuantity * knownPrice : 0,
-        recibidoCost: knownPrice !== null && hasReceived ? receivedRaw * knownPrice : 0,
-      };
+      const costEntry = { pedidoCost: knownPrice !== null ? item.totalQuantity * knownPrice : 0, recibidoCost: 0 };
       costEntries.push(costEntry);
 
-      if (ctx) {
-        input.addEventListener('click', (e) => e.stopPropagation());
-        input.addEventListener('change', () => {
-          const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
-          if (value === null) return;
-          // Se guarda el precio ACTUAL del producto como precio "congelado"
-          // de esta recepción, para que no cambie si después se edita el
-          // precio del producto en el catálogo.
-          const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
-          setReceivedQuantity(ctx.salonId, ctx.orderId, item.product.id, value, ctx.adminUid, unitPrice)
-            .then(() => {
-              const diff = value - item.totalQuantity;
-              const tone = diff === 0 ? 'ok' : 'warn';
-              diffValueEl.className = `hist-stat-value hist-stat-${tone}`;
-              diffValueEl.textContent = diff > 0 ? `+${diff}` : String(diff);
-              if (unitPrice !== null) {
-                costEntry.pedidoCost = item.totalQuantity * unitPrice;
-                costEntry.recibidoCost = value * unitPrice;
-                recomputeTotals();
-              }
-            })
-            .catch(console.error);
-        });
+      const sumReceived = () =>
+        item.breakdown.reduce((s, b) => s + (typeof b.receivedQuantity === 'number' ? b.receivedQuantity : 0), 0);
+      const anyReceived = () => item.breakdown.some((b) => typeof b.receivedQuantity === 'number');
+
+      const singlePerson = item.breakdown.length === 1;
+
+      if (singlePerson) {
+        const b = item.breakdown[0];
+        const recibidoWrap = document.createElement('section');
+        recibidoWrap.className = 'hist-stat';
+        const recibidoLabelEl = document.createElement('span');
+        recibidoLabelEl.className = 'hist-stat-label';
+        recibidoLabelEl.textContent = 'Recibido';
+        const input = document.createElement('input');
+        input.className = 'input receipt-input';
+        input.type = 'number';
+        input.min = '0';
+        input.placeholder = '0';
+        if (typeof b.receivedQuantity === 'number') input.value = b.receivedQuantity;
+        input.disabled = !ctx;
+        recibidoWrap.appendChild(recibidoLabelEl);
+        recibidoWrap.appendChild(input);
+        statsEl.appendChild(recibidoWrap);
+
+        const hasReceived = typeof b.receivedQuantity === 'number';
+        const diff = hasReceived ? b.receivedQuantity - item.totalQuantity : 0;
+        const diffText = hasReceived ? (diff > 0 ? `+${diff}` : String(diff)) : '—';
+        const { wrap: diffWrap, valueEl: diffValueEl } = buildHistStatEl('Diferencia', diffText, diffToneFor(hasReceived, diff));
+        statsEl.appendChild(diffWrap);
+
+        costEntry.recibidoCost = knownPrice !== null && hasReceived ? b.receivedQuantity * knownPrice : 0;
+
+        if (ctx) {
+          input.addEventListener('click', (e) => e.stopPropagation());
+          input.addEventListener('change', () => {
+            const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
+            if (value === null) return;
+            // Se guarda el precio ACTUAL del producto como precio "congelado"
+            // de esta recepción, para que no cambie si después se edita el
+            // precio del producto en el catálogo.
+            const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
+            setItemReceivedQuantity(ctx.salonId, ctx.orderId, b.userId, item.product.id, value, ctx.adminUid, unitPrice)
+              .then(() => {
+                b.receivedQuantity = value;
+                b.receivedUnitPrice = unitPrice;
+                const d = value - item.totalQuantity;
+                diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
+                diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
+                if (unitPrice !== null) {
+                  costEntry.pedidoCost = item.totalQuantity * unitPrice;
+                  costEntry.recibidoCost = value * unitPrice;
+                  recomputeTotals();
+                }
+              })
+              .catch(console.error);
+          });
+        }
+      } else {
+        // Varias personas pidieron este producto: "Recibido"/"Diferencia"
+        // acá arriba son de solo lectura, la suma de lo que se cargue por
+        // persona en la lista de abajo.
+        const { wrap: recibidoWrap, valueEl: recibidoValueEl } = buildHistStatEl(
+          'Recibido',
+          anyReceived() ? String(sumReceived()) : '—',
+          anyReceived() ? null : 'muted'
+        );
+        statsEl.appendChild(recibidoWrap);
+        const initialDiff = anyReceived() ? sumReceived() - item.totalQuantity : 0;
+        const { wrap: diffWrap, valueEl: diffValueEl } = buildHistStatEl(
+          'Diferencia',
+          anyReceived() ? (initialDiff > 0 ? `+${initialDiff}` : String(initialDiff)) : '—',
+          diffToneFor(anyReceived(), initialDiff)
+        );
+        statsEl.appendChild(diffWrap);
+        costEntry.recibidoCost = knownPrice !== null && anyReceived() ? sumReceived() * knownPrice : 0;
+
+        function refreshAggregate() {
+          const has = anyReceived();
+          const sum = sumReceived();
+          recibidoValueEl.textContent = has ? String(sum) : '—';
+          recibidoValueEl.className = `hist-stat-value${has ? '' : ' hist-stat-muted'}`;
+          const diff = has ? sum - item.totalQuantity : 0;
+          diffValueEl.textContent = has ? (diff > 0 ? `+${diff}` : String(diff)) : '—';
+          diffValueEl.className = `hist-stat-value hist-stat-${diffToneFor(has, diff)}`;
+          costEntry.recibidoCost = knownPrice !== null && has ? sum * knownPrice : 0;
+          recomputeTotals();
+        }
+
+        row.appendChild(statsEl);
+        container.appendChild(row);
+
+        // <section>, no <div>: cuelga de .consolidated-row-detail.
+        const peopleWrap = document.createElement('section');
+        peopleWrap.className = 'alloc-panel';
+        const peopleLabel = document.createElement('p');
+        peopleLabel.className = 'text-sm text-muted';
+        peopleLabel.textContent = 'Recibido por persona:';
+        peopleWrap.appendChild(peopleLabel);
+        for (const b of item.breakdown) {
+          // <div> a propósito: dentro de .consolidated-row-detail cualquier
+          // <div> hijo recibe display:flex + justify-content:space-between,
+          // que es justo el layout label/input que queremos acá.
+          const personRow = document.createElement('div');
+          personRow.className = 'alloc-row';
+          const label = document.createElement('span');
+          label.textContent = `${b.userName} (pidió ${b.quantity})`;
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.className = 'input alloc-input';
+          if (typeof b.receivedQuantity === 'number') input.value = b.receivedQuantity;
+          input.disabled = !ctx;
+          personRow.appendChild(label);
+          personRow.appendChild(input);
+          peopleWrap.appendChild(personRow);
+
+          if (ctx) {
+            input.addEventListener('click', (e) => e.stopPropagation());
+            input.addEventListener('change', () => {
+              const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
+              if (value === null) return;
+              const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
+              setItemReceivedQuantity(ctx.salonId, ctx.orderId, b.userId, item.product.id, value, ctx.adminUid, unitPrice)
+                .then(() => {
+                  b.receivedQuantity = value;
+                  b.receivedUnitPrice = unitPrice;
+                  refreshAggregate();
+                })
+                .catch(console.error);
+            });
+          }
+        }
+        container.appendChild(peopleWrap);
+        continue; // ya insertamos row y peopleWrap arriba, no repetir abajo
       }
 
       row.appendChild(statsEl);
       container.appendChild(row);
-
-      // Si no llegó todo y lo pidió más de una persona, no hay forma de
-      // saber sola cuánto le toca a cada quien: el admin lo asigna a mano.
-      const needsAllocation = hasReceived && receivedRaw < item.totalQuantity && item.breakdown.length > 1;
-      if (needsAllocation) {
-        container.appendChild(buildAllocationPanel(item, received, ctx));
-      }
     }
   }
 
@@ -1495,99 +1605,6 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
     container.appendChild(totalWrap);
     recomputeTotals();
   }
-}
-
-/**
- * Panel para asignar, producto por producto, cuánto de lo que llegó le
- * corresponde a cada persona que lo pidió — necesario cuando llegó menos de
- * lo pedido y hay más de un usuario involucrado (no hay forma de saberlo
- * solo con la cantidad total). Sin esta asignación, el usuario básico ve
- * "Pendiente de asignación" en su Historial en vez de un número.
- */
-function buildAllocationPanel(item, received, ctx) {
-  // <section>, no <div>: cuelga de .consolidated-row-detail (ver notas más arriba).
-  const wrap = document.createElement('section');
-  wrap.className = 'alloc-panel';
-
-  const existing = received.allocations || {};
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.type = 'button';
-  toggleBtn.className = 'btn btn-ghost btn-sm';
-  const initialAllocated = item.breakdown.reduce((s, b) => s + (existing[b.userId] || 0), 0);
-  toggleBtn.textContent =
-    initialAllocated > 0
-      ? `Asignado ${initialAllocated}/${received.receivedQuantity} — editar asignación`
-      : 'No llegó todo: asignar entre quienes lo pidieron';
-  wrap.appendChild(toggleBtn);
-
-  const form = document.createElement('section');
-  form.className = 'alloc-form hidden';
-
-  const inputs = {};
-  for (const b of item.breakdown) {
-    const row = document.createElement('div');
-    row.className = 'alloc-row';
-    const label = document.createElement('span');
-    label.textContent = `${b.userName} (pidió ${b.quantity})`;
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '0';
-    input.className = 'input alloc-input';
-    input.value = existing[b.userId] ?? '';
-    input.disabled = !ctx;
-    inputs[b.userId] = input;
-    row.appendChild(label);
-    row.appendChild(input);
-    form.appendChild(row);
-  }
-
-  const statusEl = document.createElement('p');
-  statusEl.className = 'text-sm text-muted';
-  statusEl.textContent = `Llegaron ${received.receivedQuantity} en total. Repartilas entre las personas de arriba.`;
-  form.appendChild(statusEl);
-
-  if (ctx) {
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.className = 'btn btn-secondary btn-sm mt-4';
-    saveBtn.textContent = 'Guardar asignación';
-    saveBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const allocations = {};
-      let sum = 0;
-      for (const [uid, input] of Object.entries(inputs)) {
-        const v = input.value.trim() === '' ? 0 : Math.max(0, Number(input.value) || 0);
-        allocations[uid] = v;
-        sum += v;
-      }
-      if (sum > received.receivedQuantity) {
-        alert(`Asignaste ${sum} unidades pero solo llegaron ${received.receivedQuantity}. Ajustá los números.`);
-        return;
-      }
-      try {
-        await setReceivedAllocations(ctx.salonId, ctx.orderId, item.product.id, allocations, ctx.adminUid);
-        received.allocations = allocations;
-        toggleBtn.textContent = `Asignado ${sum}/${received.receivedQuantity} — editar asignación`;
-        statusEl.textContent =
-          sum === received.receivedQuantity
-            ? 'Asignación completa: cada persona ya puede ver en su Historial cuánto le llegó.'
-            : `Todavía falta asignar ${received.receivedQuantity - sum} unidad(es).`;
-      } catch (err) {
-        console.error(err);
-        alert('No se pudo guardar la asignación. Probá de nuevo.');
-      }
-    });
-    form.appendChild(saveBtn);
-  }
-
-  toggleBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    form.classList.toggle('hidden');
-  });
-
-  wrap.appendChild(form);
-  return wrap;
 }
 
 function renderHistUserView(container, userGroups, categoryById, userById, receivedByProduct = new Map()) {

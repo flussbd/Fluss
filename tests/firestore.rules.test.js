@@ -17,8 +17,10 @@ import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 // Modelo de roles: platform_admin | local_admin | basic, ver comentarios en
 // firestore.rules. Estos tests cubren el aislamiento entre salones (un
 // local_admin o basic de un salón NO debe poder leer/escribir datos de
-// OTRO salón) y los casos de permisos más sensibles: alta de usuarios vía
-// invitación, y escritura de items/received/submissions de un pedido.
+// OTRO salón), los casos de permisos más sensibles (alta de usuarios vía
+// invitación, escritura de items/submissions de un pedido), y que un usuario
+// básico no pueda tocar los campos de recepción (receivedQuantity/etc.) que
+// ahora viven en el mismo doc de item que su propio pedido.
 // ---------------------------------------------------------------------------
 
 let testEnv;
@@ -223,29 +225,94 @@ describe('order items', () => {
   });
 });
 
-describe('received (recepción de mercadería)', () => {
-  it('solo el local_admin (o platform_admin) puede escribir recepción, no un usuario básico', async () => {
+describe('recepción (receivedQuantity guardado directo en items/{itemId})', () => {
+  it('el local_admin puede cargar receivedQuantity en el item de un usuario, aunque no esté en draft', async () => {
     await seed(async (db) => {
-      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
       await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
       await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+      });
     });
-    const basicDb = ctxFor('basicA').firestore();
-    await assertFails(
-      setDoc(doc(basicDb, `salons/${SALON_A}/orders/o1/received/p1`), { receivedQuantity: 3 })
-    );
-    const adminDb = ctxFor('adminA').firestore();
+    const db = ctxFor('adminA').firestore();
     await assertSucceeds(
-      setDoc(doc(adminDb, `salons/${SALON_A}/orders/o1/received/p1`), { receivedQuantity: 3 })
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        receivedQuantity: 3,
+        receivedUnitPrice: 4500,
+        receivedUpdatedBy: 'adminA',
+      })
     );
   });
 
-  it('cualquier miembro del salón puede LEER la recepción (para ver si les llegó)', async () => {
+  it('un usuario básico NO puede cargarse receivedQuantity a sí mismo, ni siquiera en su propio item en draft', async () => {
     await seed(async (db) => {
       await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
-      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/received/p1`), { receivedQuantity: 3 });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+      });
     });
     const db = ctxFor('basicA').firestore();
-    await assertSucceeds(getDoc(doc(db, `salons/${SALON_A}/orders/o1/received/p1`)));
+    await assertFails(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 999 })
+    );
+  });
+
+  it('un usuario básico NO puede incluir receivedQuantity al crear su propio item', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+    });
+    const db = ctxFor('basicA').firestore();
+    await assertFails(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 2,
+        receivedQuantity: 999,
+      })
+    );
+  });
+
+  it('un usuario básico SÍ puede seguir editando la cantidad de su item aunque ya tenga receivedQuantity cargado (no lo borra ni lo toca)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+        receivedUnitPrice: 4500,
+      });
+    });
+    const db = ctxFor('basicA').firestore();
+    // merge:true — como hace setMyItem en db.js: no reenvía receivedQuantity,
+    // así que el diff de campos afectados no lo incluye y la regla lo permite.
+    await assertSucceeds(
+      setDoc(
+        doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`),
+        { userId: 'basicA', productId: 'p1', quantity: 7 },
+        { merge: true }
+      )
+    );
+  });
+
+  it('cualquier miembro del salón puede LEER el item (para ver si le llegó)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+      });
+    });
+    const db = ctxFor('basicA').firestore();
+    await assertSucceeds(getDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
   });
 });

@@ -1196,6 +1196,10 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       if (hasReceived) input.value = receivedRaw;
       input.disabled = !ctx;
 
+      const diffLabelEl = document.createElement('span');
+      diffLabelEl.className = 'receipt-pedido';
+      diffLabelEl.textContent = 'Diferencia:';
+
       const diffEl = document.createElement('span');
       diffEl.className = `receipt-diff ${receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)}`;
       diffEl.textContent = hasReceived ? (receivedRaw - item.totalQuantity > 0 ? `+${receivedRaw - item.totalQuantity}` : String(receivedRaw - item.totalQuantity)) : '—';
@@ -1222,6 +1226,7 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       statsEl.appendChild(pedidoEl);
       statsEl.appendChild(recibidoLabelEl);
       statsEl.appendChild(input);
+      statsEl.appendChild(diffLabelEl);
       statsEl.appendChild(diffEl);
       line.appendChild(nameEl);
       line.appendChild(statsEl);

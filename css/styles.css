@@ -889,6 +889,12 @@ h1, h2, h3 {
   color: var(--accent);
 }
 
+/* Estado de usuario/salón bloqueado o dado de baja. */
+.pill-warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
 .empty-state {
   text-align: center;
   color: var(--text-faint);

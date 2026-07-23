@@ -25,16 +25,34 @@
   </div>
 
   <script type="module">
-    import { auth, logout, resolveProfile, homeForRole, resendVerificationEmail } from './js/auth.js';
+    import { auth, logout, resolveProfile, homeForRole, resendVerificationEmail, checkAccountAccess } from './js/auth.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     const params = new URLSearchParams(window.location.search);
+    const reason = params.get('reason');
     const resendBtn = document.getElementById('resendBtn');
+    const retryBtn = document.getElementById('retryBtn');
+
     if (params.get('verify') === '1') {
       document.getElementById('title').textContent = 'Confirmá tu email';
       document.getElementById('message').textContent =
         'Te enviamos un email de verificación. Abrilo, confirmá tu cuenta y después volvé a esta pantalla.';
       resendBtn.classList.remove('hidden');
+    } else if (reason === 'blocked') {
+      document.getElementById('title').textContent = 'Cuenta bloqueada';
+      document.getElementById('message').textContent =
+        'Tu administrador bloqueó tu cuenta temporalmente. Avisale para que te desbloquee, y después probá de nuevo acá.';
+      retryBtn.textContent = 'Ya me desbloquearon, reintentar';
+    } else if (reason === 'inactive') {
+      document.getElementById('title').textContent = 'Cuenta dada de baja';
+      document.getElementById('message').textContent =
+        'Tu administrador dio de baja tu cuenta. Si creés que es un error, hablá con tu administrador.';
+      retryBtn.textContent = 'Ya me reactivaron, reintentar';
+    } else if (reason === 'salon-inactive') {
+      document.getElementById('title').textContent = 'Salón dado de baja';
+      document.getElementById('message').textContent =
+        'El administrador de la plataforma dio de baja tu salón. Hablá con el administrador de la plataforma.';
+      retryBtn.textContent = 'Ya se reactivó, reintentar';
     }
 
     resendBtn.addEventListener('click', async () => {
@@ -60,7 +78,7 @@
       }
     });
 
-    document.getElementById('retryBtn').addEventListener('click', async () => {
+    retryBtn.addEventListener('click', async () => {
       const user = auth.currentUser;
       if (!user) {
         window.location.href = 'index.html';
@@ -68,11 +86,16 @@
       }
       await user.reload();
       const profile = await resolveProfile(user);
-      if (profile && !profile.pendingEmailVerification) {
-        window.location.href = homeForRole(profile.role);
-      } else {
+      if (!profile || profile.pendingEmailVerification) {
         alert('Todavía no encontramos tu invitación o falta verificar el email.');
+        return;
       }
+      const access = await checkAccountAccess(profile);
+      if (!access.ok) {
+        alert('Todavía no — probá de nuevo en un rato o consultá con tu administrador.');
+        return;
+      }
+      window.location.href = homeForRole(profile.role);
     });
 
     document.getElementById('logoutBtn').addEventListener('click', async () => {

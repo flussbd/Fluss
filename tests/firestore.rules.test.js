@@ -316,3 +316,140 @@ describe('recepción (receivedQuantity guardado directo en items/{itemId})', () 
     await assertSucceeds(getDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
   });
 });
+
+describe('status de usuario (blocked/inactive)', () => {
+  it('un usuario básico bloqueado no puede leer nada, ni siquiera de su propio salón', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/basicA'), {
+        role: 'basic',
+        salonId: SALON_A,
+        email: 'basicA@fluss.test',
+        status: 'blocked',
+      });
+      await setDoc(doc(db, `salons/${SALON_A}/products/p1`), { name: 'Tinte', categoryId: 'c1' });
+    });
+    const db = ctxFor('basicA').firestore();
+    await assertFails(getDoc(doc(db, `salons/${SALON_A}/products/p1`)));
+  });
+
+  it('un usuario básico bloqueado no puede escribir (crear su propio item de pedido)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/basicA'), {
+        role: 'basic',
+        salonId: SALON_A,
+        email: 'basicA@fluss.test',
+        status: 'blocked',
+      });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+    });
+    const db = ctxFor('basicA').firestore();
+    await assertFails(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 2,
+      })
+    );
+  });
+
+  it('un admin local dado de baja (status inactive) pierde el acceso igual que uno bloqueado', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), {
+        role: 'local_admin',
+        salonId: SALON_A,
+        email: 'adminA@fluss.test',
+        status: 'inactive',
+      });
+      await setDoc(doc(db, `salons/${SALON_A}/products/p1`), { name: 'Tinte', categoryId: 'c1' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(getDoc(doc(db, `salons/${SALON_A}/products/p1`)));
+    await assertFails(setDoc(doc(db, `salons/${SALON_A}/products/p2`), { name: 'Otro', categoryId: 'c1' }));
+  });
+
+  it('el local_admin puede bloquear y dar de baja a un usuario básico de su salón', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(updateDoc(doc(db, 'users/basicA'), { status: 'blocked' }));
+    await assertSucceeds(updateDoc(doc(db, 'users/basicA'), { status: 'inactive' }));
+  });
+
+  it('el local_admin NO puede tocar (ni bloquear ni cambiar el rol) a otro admin local de su mismo salón', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, 'users/adminA2'), { role: 'local_admin', salonId: SALON_A, email: 'adminA2@fluss.test' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(updateDoc(doc(db, 'users/adminA2'), { status: 'inactive' }));
+    await assertFails(deleteDoc(doc(db, 'users/adminA2')));
+  });
+
+  it('el local_admin NO puede ascender a un usuario básico a admin local', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(updateDoc(doc(db, 'users/basicA'), { role: 'local_admin' }));
+  });
+
+  it('el admin de plataforma puede dar de baja (y reactivar) a un admin local de cualquier salón', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+    });
+    const db = ctxFor('plat1').firestore();
+    await assertSucceeds(updateDoc(doc(db, 'users/adminA'), { status: 'inactive' }));
+    await assertSucceeds(updateDoc(doc(db, 'users/adminA'), { status: 'active', salonId: SALON_B }));
+  });
+});
+
+describe('salón activo/inactivo', () => {
+  it('solo el admin de plataforma puede dar de baja un salón; el admin local no, aunque pueda editar otros campos', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', active: true });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(updateDoc(doc(db, `salons/${SALON_A}`), { active: false }));
+    await assertSucceeds(updateDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A renombrado' }));
+  });
+
+  it('el admin de plataforma puede dar de baja y reactivar un salón', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', active: true });
+    });
+    const db = ctxFor('plat1').firestore();
+    await assertSucceeds(updateDoc(doc(db, `salons/${SALON_A}`), { active: false }));
+    await assertSucceeds(updateDoc(doc(db, `salons/${SALON_A}`), { active: true }));
+  });
+
+  it('un salón dado de baja sigue siendo LEÍBLE por su equipo, pero nadie del salón puede escribir ahí', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, 'users/basicA'), { role: 'basic', salonId: SALON_A, email: 'basicA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', active: false });
+      await setDoc(doc(db, `salons/${SALON_A}/products/p1`), { name: 'Tinte', categoryId: 'c1' });
+    });
+    const adminDb = ctxFor('adminA').firestore();
+    const basicDb = ctxFor('basicA').firestore();
+
+    await assertSucceeds(getDoc(doc(adminDb, `salons/${SALON_A}/products/p1`)));
+    await assertSucceeds(getDoc(doc(basicDb, `salons/${SALON_A}/products/p1`)));
+
+    await assertFails(setDoc(doc(adminDb, `salons/${SALON_A}/products/p2`), { name: 'Otro', categoryId: 'c1' }));
+  });
+
+  it('el admin de plataforma puede seguir escribiendo en un salón dado de baja', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', active: false });
+    });
+    const db = ctxFor('plat1').firestore();
+    await assertSucceeds(setDoc(doc(db, `salons/${SALON_A}/products/p1`), { name: 'Tinte', categoryId: 'c1' }));
+  });
+});

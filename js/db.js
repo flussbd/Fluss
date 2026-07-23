@@ -287,6 +287,16 @@ export function updateUserName(uid, name) {
   return updateDoc(doc(db, 'users', uid), { name });
 }
 
+/**
+ * Cambia el estado de un usuario: 'active' | 'blocked' | 'inactive'.
+ * - El admin local solo puede usar esto con usuarios básicos de su salón
+ *   (lo hace cumplir firestore.rules, no esta función).
+ * - El admin de plataforma la usa para dar de baja/reactivar un admin local.
+ */
+export function setUserStatus(uid, status) {
+  return updateDoc(doc(db, 'users', uid), { status });
+}
+
 export function createInvite(email, role, salonId, invitedBy) {
   return setDoc(doc(db, 'invites', email.toLowerCase()), {
     role,
@@ -301,6 +311,27 @@ export function createInvite(email, role, salonId, invitedBy) {
 // ---------------------------------------------------------------------------
 export async function createSalon(name, createdBy) {
   return addDoc(collection(db, 'salons'), { name, createdBy, createdAt: serverTimestamp() });
+}
+
+/** Da de baja o reactiva un salón (campo "active"). No borra ningún dato. */
+export function setSalonActive(salonId, active) {
+  return updateDoc(salonRef(salonId), { active });
+}
+
+export function updateSalonName(salonId, name) {
+  return updateDoc(salonRef(salonId), { name });
+}
+
+/** Reasigna un admin local a otro salón (solo admin de plataforma, ver firestore.rules). */
+export function reassignLocalAdminSalon(uid, newSalonId) {
+  return updateDoc(doc(db, 'users', uid), { salonId: newSalonId });
+}
+
+/** Todos los admins locales (de cualquier salón), para la vista del admin de plataforma. */
+export function listenLocalAdmins(cb) {
+  return onSnapshot(query(collection(db, 'users'), where('role', '==', 'local_admin')), (snap) =>
+    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
 }
 
 // ---------------------------------------------------------------------------

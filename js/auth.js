@@ -84,6 +84,7 @@ export async function resolveProfile(user) {
     email: user.email,
     role: invite.role,
     salonId: invite.salonId,
+    status: 'active',
     photoURL: user.photoURL || null,
     createdAt: serverTimestamp(),
   };
@@ -103,6 +104,31 @@ export function homeForRole(role) {
 }
 
 /**
+ * Chequea si un perfil YA resuelto puede entrar a la app: no bloqueado, no
+ * dado de baja, y (si no es admin de plataforma) su salón sigue activo.
+ * Se comparte entre requireRole() (guardia normal de cada página) y
+ * pending.html (botón "reintentar"), para no repetir la misma lógica dos
+ * veces y que se puedan desincronizar con el tiempo.
+ */
+export async function checkAccountAccess(profile) {
+  // Usuario bloqueado (reversible, admin local) o dado de baja (admin de
+  // plataforma): pierde el acceso aunque su perfil siga existiendo.
+  const status = profile.status || 'active';
+  if (status === 'blocked') return { ok: false, reason: 'blocked' };
+  if (status === 'inactive') return { ok: false, reason: 'inactive' };
+
+  // Admin de plataforma no depende de ningún salón puntual. Para el resto,
+  // si el admin de plataforma dio de baja el salón, no se puede seguir
+  // usando la app (aunque el historial siga siendo legible por otro lado).
+  if (profile.role !== 'platform_admin' && profile.salonId) {
+    const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
+    const salonActive = !salonSnap.exists() || salonSnap.data().active !== false;
+    if (!salonActive) return { ok: false, reason: 'salon-inactive' };
+  }
+  return { ok: true };
+}
+
+/**
  * Guardia de página: exige sesión + rol permitido. Si no cumple, redirige.
  * Uso típico al principio de cada page-script:
  *   const profile = await requireRole(['local_admin']);
@@ -117,6 +143,11 @@ export function requireRole(allowedRoles) {
       const profile = await resolveProfile(user);
       if (!profile || profile.pendingEmailVerification) {
         window.location.href = 'pending.html';
+        return;
+      }
+      const access = await checkAccountAccess(profile);
+      if (!access.ok) {
+        window.location.href = `pending.html?reason=${access.reason}`;
         return;
       }
       if (!allowedRoles.includes(profile.role)) {

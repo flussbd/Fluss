@@ -23,6 +23,7 @@ import {
   setItemReceivedQuantity,
   createInvite,
   updateUserName,
+  setUserStatus,
   consolidateByProduct,
   consolidateByUser,
   compareProductsByShade,
@@ -1054,6 +1055,10 @@ function renderInviteList(invites) {
   }
 }
 
+// Etiqueta y tono del estado de un usuario básico (no se usa para admins
+// locales — a esos solo los gestiona el admin de plataforma).
+const USER_STATUS_LABEL = { blocked: 'Bloqueado', inactive: 'De baja' };
+
 function renderUserList(users) {
   const container = document.getElementById('userList');
   container.innerHTML = '';
@@ -1062,6 +1067,7 @@ function renderUserList(users) {
     return;
   }
   for (const u of users) {
+    const status = u.status || 'active';
     const row = document.createElement('div');
     row.className = 'list-row';
     row.innerHTML = `
@@ -1080,17 +1086,64 @@ function renderUserList(users) {
     pill.textContent = u.role === 'local_admin' ? 'Admin local' : 'Básico';
     actions.appendChild(pill);
 
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-ghost btn-sm';
-    btn.textContent = 'Editar nombre';
-    btn.addEventListener('click', async () => {
-      const newName = prompt('Nuevo nombre para este usuario:', u.name);
-      if (newName === null) return;
-      const trimmed = newName.trim();
-      if (!trimmed || trimmed === u.name) return;
-      await updateUserName(u.id, trimmed);
-    });
-    actions.appendChild(btn);
+    if (status !== 'active' && USER_STATUS_LABEL[status]) {
+      const statusPill = document.createElement('span');
+      statusPill.className = 'pill pill-warning';
+      statusPill.textContent = USER_STATUS_LABEL[status];
+      actions.appendChild(statusPill);
+    }
+
+    // Un admin local solo puede gestionar (editar nombre, bloquear, dar de
+    // baja) a usuarios BÁSICOS de su salón — a otros admins locales los
+    // gestiona el admin de plataforma (ver firestore.rules). Se ocultan los
+    // controles acá en vez de mostrarlos y que fallen en silencio.
+    if (u.role === 'basic') {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = 'Editar nombre';
+      editBtn.addEventListener('click', async () => {
+        const newName = prompt('Nuevo nombre para este usuario:', u.name);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed || trimmed === u.name) return;
+        await updateUserName(u.id, trimmed);
+      });
+      actions.appendChild(editBtn);
+
+      const blockBtn = document.createElement('button');
+      blockBtn.className = 'btn btn-ghost btn-sm';
+      if (status === 'blocked') {
+        blockBtn.textContent = 'Desbloquear';
+        blockBtn.addEventListener('click', async () => {
+          await setUserStatus(u.id, 'active');
+        });
+      } else {
+        blockBtn.textContent = 'Bloquear';
+        blockBtn.addEventListener('click', async () => {
+          if (confirm(`¿Bloquear a "${u.name}"? No va a poder entrar a la app hasta que lo desbloquees.`)) {
+            await setUserStatus(u.id, 'blocked');
+          }
+        });
+      }
+      actions.appendChild(blockBtn);
+
+      const deactivateBtn = document.createElement('button');
+      deactivateBtn.className = 'btn btn-ghost btn-sm';
+      if (status === 'inactive') {
+        deactivateBtn.textContent = 'Reactivar';
+        deactivateBtn.addEventListener('click', async () => {
+          await setUserStatus(u.id, 'active');
+        });
+      } else {
+        deactivateBtn.textContent = 'Dar de baja';
+        deactivateBtn.addEventListener('click', async () => {
+          if (confirm(`¿Dar de baja a "${u.name}"? Deja de tener acceso a la app. Podés reactivarlo después.`)) {
+            await setUserStatus(u.id, 'inactive');
+          }
+        });
+      }
+      actions.appendChild(deactivateBtn);
+    }
 
     row.appendChild(actions);
     container.appendChild(row);

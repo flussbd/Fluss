@@ -1,0 +1,38 @@
+name: Tests
+
+# Corre los tests de Fluss en cada push y cada pull request, sobre cualquier
+# rama. Dos jobs separados: los de pure.js (rápidos, sin dependencias) y los
+# de firestore.rules (necesitan el Firebase Emulator Suite + Java — los
+# runners de GitHub ya traen Java preinstalado, no hace falta configurarlo).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  pure-tests:
+    name: Tests de lógica pura (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+
+  rules-tests:
+    name: Tests de firestore.rules (Firebase Emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run test:rules

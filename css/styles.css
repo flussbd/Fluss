@@ -940,6 +940,8 @@ h1, h2, h3 {
   padding: 24px;
   width: 100%;
   max-width: 380px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 
 .modal h2 {

@@ -320,7 +320,7 @@ function setupPeriodModal() {
   document.getElementById('periodConfirmBtn').addEventListener('click', async () => {
     const start = document.getElementById('periodStartInput').value;
     const end = document.getElementById('periodEndInput').value;
-    const endTime = document.getElementById('periodEndTimeInput').value || '23:59';
+    const endTime = document.getElementById('periodEndTimeInput').value || '10:00';
     if (!start || !end) {
       alert('Completá las dos fechas.');
       return;

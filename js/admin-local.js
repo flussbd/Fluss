@@ -1300,6 +1300,21 @@ function receiptDiffClass(hasReceived, diff) {
   return diff < 0 ? 'receipt-diff-short' : 'receipt-diff-over';
 }
 
+/** Construye una columna label+valor (mismo estilo que el Historial del usuario básico). */
+function buildHistStatEl(label, value, tone = null) {
+  const wrap = document.createElement('section');
+  wrap.className = 'hist-stat';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'hist-stat-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = `hist-stat-value${tone ? ' hist-stat-' + tone : ''}`;
+  valueEl.textContent = value;
+  wrap.appendChild(labelEl);
+  wrap.appendChild(valueEl);
+  return { wrap, valueEl };
+}
+
 function renderHistProductView(container, groups, categoryById, receivedByProduct = new Map(), ctx = null) {
   container.innerHTML = '';
   if (groups.length === 0) {
@@ -1334,46 +1349,28 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
     catTitle.textContent = categoryById.get(group.category.id)?.name || group.category.name;
     container.appendChild(catTitle);
     for (const item of group.items) {
-      const line = document.createElement('div');
-      line.className = 'receipt-line';
+      // <section>, no <div>: esto cuelga de .consolidated-row-detail (ver
+      // notas más arriba). Reusa la misma grilla de 4 columnas fijas que
+      // el Historial del usuario básico, para que Pedido/Precio/Recibido/
+      // Diferencia queden siempre alineados sin importar el largo del
+      // nombre del producto o de los valores.
+      const row = document.createElement('section');
+      row.className = 'hist-item';
       const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
 
-      const nameEl = document.createElement('span');
-      nameEl.className = 'receipt-name';
+      const nameEl = document.createElement('p');
+      nameEl.className = 'hist-item-name';
       nameEl.textContent = `${item.product.name}${meta ? ' — ' + meta : ''}`;
+      row.appendChild(nameEl);
 
-      const statsEl = document.createElement('span');
-      statsEl.className = 'receipt-stats';
-
-      const pedidoEl = document.createElement('span');
-      pedidoEl.className = 'receipt-pedido';
-      pedidoEl.textContent = `Pedido: ${item.totalQuantity}`;
+      const statsEl = document.createElement('section');
+      statsEl.className = 'hist-item-stats';
 
       const received = receivedByProduct.get(item.product.id);
       const hasReceived = !!received && typeof received.receivedQuantity === 'number';
       const receivedRaw = hasReceived ? received.receivedQuantity : null;
 
-      // Etiqueta fija (no solo el placeholder, que desaparece apenas se
-      // escribe un valor) para que quede claro qué es ese campo.
-      const recibidoLabelEl = document.createElement('span');
-      recibidoLabelEl.className = 'receipt-pedido';
-      recibidoLabelEl.textContent = 'Recibido:';
-
-      const input = document.createElement('input');
-      input.className = 'input receipt-input';
-      input.type = 'number';
-      input.min = '0';
-      input.placeholder = '0';
-      if (hasReceived) input.value = receivedRaw;
-      input.disabled = !ctx;
-
-      const diffLabelEl = document.createElement('span');
-      diffLabelEl.className = 'receipt-pedido';
-      diffLabelEl.textContent = 'Diferencia:';
-
-      const diffEl = document.createElement('span');
-      diffEl.className = `receipt-diff ${receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)}`;
-      diffEl.textContent = hasReceived ? (receivedRaw - item.totalQuantity > 0 ? `+${receivedRaw - item.totalQuantity}` : String(receivedRaw - item.totalQuantity)) : '—';
+      statsEl.appendChild(buildHistStatEl('Pedido', String(item.totalQuantity)).wrap);
 
       // Precio "congelado" si ya hay recepción registrada; si no, el precio
       // actual del producto (mismo criterio que usa el Excel).
@@ -1383,9 +1380,35 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
           ? item.product.price
           : null;
       if (knownPrice !== null) anyPriceKnown = true;
-      const precioEl = document.createElement('span');
-      precioEl.className = 'receipt-pedido';
-      precioEl.textContent = knownPrice !== null ? `Precio: ${formatPrice(knownPrice)}` : 'Precio: —';
+      statsEl.appendChild(buildHistStatEl('Precio', knownPrice !== null ? formatPrice(knownPrice) : '—', knownPrice === null ? 'muted' : null).wrap);
+
+      const recibidoWrap = document.createElement('section');
+      recibidoWrap.className = 'hist-stat';
+      const recibidoLabelEl = document.createElement('span');
+      recibidoLabelEl.className = 'hist-stat-label';
+      recibidoLabelEl.textContent = 'Recibido';
+      const input = document.createElement('input');
+      input.className = 'input receipt-input';
+      input.type = 'number';
+      input.min = '0';
+      input.placeholder = '0';
+      if (hasReceived) input.value = receivedRaw;
+      input.disabled = !ctx;
+      recibidoWrap.appendChild(recibidoLabelEl);
+      recibidoWrap.appendChild(input);
+      statsEl.appendChild(recibidoWrap);
+
+      const diffTone = { 'receipt-diff-ok': 'ok', 'receipt-diff-short': 'warn', 'receipt-diff-over': 'warn', 'receipt-diff-pending': 'muted' }[
+        receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)
+      ];
+      const diffText = hasReceived
+        ? receivedRaw - item.totalQuantity > 0
+          ? `+${receivedRaw - item.totalQuantity}`
+          : String(receivedRaw - item.totalQuantity)
+        : '—';
+      const { wrap: diffWrap, valueEl: diffValueEl } = buildHistStatEl('Diferencia', diffText, diffTone);
+      statsEl.appendChild(diffWrap);
+
       const costEntry = {
         pedidoCost: knownPrice !== null ? item.totalQuantity * knownPrice : 0,
         recibidoCost: knownPrice !== null && hasReceived ? receivedRaw * knownPrice : 0,
@@ -1404,8 +1427,9 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
           setReceivedQuantity(ctx.salonId, ctx.orderId, item.product.id, value, ctx.adminUid, unitPrice)
             .then(() => {
               const diff = value - item.totalQuantity;
-              diffEl.className = `receipt-diff ${receiptDiffClass(true, diff)}`;
-              diffEl.textContent = diff > 0 ? `+${diff}` : String(diff);
+              const tone = diff === 0 ? 'ok' : 'warn';
+              diffValueEl.className = `hist-stat-value hist-stat-${tone}`;
+              diffValueEl.textContent = diff > 0 ? `+${diff}` : String(diff);
               if (unitPrice !== null) {
                 costEntry.pedidoCost = item.totalQuantity * unitPrice;
                 costEntry.recibidoCost = value * unitPrice;
@@ -1416,15 +1440,8 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
         });
       }
 
-      statsEl.appendChild(pedidoEl);
-      statsEl.appendChild(precioEl);
-      statsEl.appendChild(recibidoLabelEl);
-      statsEl.appendChild(input);
-      statsEl.appendChild(diffLabelEl);
-      statsEl.appendChild(diffEl);
-      line.appendChild(nameEl);
-      line.appendChild(statsEl);
-      container.appendChild(line);
+      row.appendChild(statsEl);
+      container.appendChild(row);
 
       // Si no llegó todo y lo pidió más de una persona, no hay forma de
       // saber sola cuánto le toca a cada quien: el admin lo asigna a mano.

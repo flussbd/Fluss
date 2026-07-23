@@ -398,17 +398,21 @@ function renderMyHistory(orders) {
 
           if (typeof received?.unitPrice === 'number') {
             statsEl.appendChild(buildHistStat('Precio', formatPrice(received.unitPrice)));
-            const myOrderCost = item.quantity * received.unitPrice;
-            myPeriodTotalPedido += myOrderCost;
+            // "Mi total" = lo que realmente llegó (no lo pedido): Pedido ya
+            // muestra la cantidad solicitada, así que esta columna completa
+            // esa info con el costo de lo que efectivamente te llegó.
+            myPeriodTotalPedido += item.quantity * received.unitPrice;
             myPeriodTotalKnown = true;
-            statsEl.appendChild(
-              buildHistStat('Mi total', formatPrice(myOrderCost), complete ? 'ok' : arrived.state === 'pending' ? 'muted' : 'warn')
-            );
 
             if (arrived.state === 'known') {
-              myPeriodTotalLlegado += arrived.quantity * received.unitPrice;
+              const myArrivedCost = arrived.quantity * received.unitPrice;
+              myPeriodTotalLlegado += myArrivedCost;
+              statsEl.appendChild(buildHistStat('Mi total', formatPrice(myArrivedCost), complete ? 'ok' : 'warn'));
             } else if (arrived.state === 'pending') {
               anyPendingCost = true;
+              statsEl.appendChild(buildHistStat('Mi total', 'Pendiente', 'muted'));
+            } else {
+              statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
             }
           } else {
             statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));

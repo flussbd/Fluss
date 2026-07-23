@@ -99,8 +99,13 @@ function setupCatalogForms() {
     const input = document.getElementById('categoryName');
     const name = input.value.trim();
     if (!name) return;
-    await addCategory(state.profile.salonId, name, state.categories.length);
-    input.value = '';
+    try {
+      await addCategory(state.profile.salonId, name, state.categories.length);
+      input.value = '';
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo crear la categoría. Probá de nuevo.');
+    }
   });
 
   document.getElementById('productForm').addEventListener('submit', async (e) => {
@@ -116,8 +121,13 @@ function setupCatalogForms() {
     const priceRaw = document.getElementById('productPrice').value.trim();
     const price = priceRaw ? Number(priceRaw) : null;
     if (!name || !brand || !categoryId) return;
-    await addProduct(state.profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode, price });
-    e.target.reset();
+    try {
+      await addProduct(state.profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode, price });
+      e.target.reset();
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo agregar el producto. Probá de nuevo.');
+    }
   });
 
   document.getElementById('bulkImportBtn').addEventListener('click', async () => {

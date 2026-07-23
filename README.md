@@ -2,7 +2,7 @@
 
 Primera versión de Fluss: HTML/CSS/JavaScript plano (sin build step, sin framework) con Firebase Authentication + Firestore como backend. Multi-salón: varios salones independientes comparten la misma app, cada uno con su catálogo, equipo y pedidos separados.
 
-> Actualización: a diferencia de lo que decía esta nota antes, sí se pudo probar bastante. Los tests de lógica pura (`npm test`) y de `firestore.rules` contra el Firebase Emulator Suite (`npm run test:rules`) corren y pasan (16 y 28 casos respectivamente), y la app se levantó con un servidor estático local para confirmar que las cuatro páginas cargan sin errores de consola. Lo que **no** se hizo es un login real de punta a punta contra el proyecto de Firebase de producción (crear un pedido, invitar gente, cargar una recepción) — eso, y sobre todo la sección de Historial de `admin-local.js` (la más grande y la única sin ningún test automatizado), conviene probarlas a mano antes de invitar usuarios reales.
+> Actualización: a diferencia de lo que decía esta nota antes, sí se pudo probar bastante. Los tests de lógica pura (`npm test`) y de `firestore.rules` contra el Firebase Emulator Suite (`npm run test:rules`) corren y pasan (19 y 28 casos respectivamente), y la app se levantó con un servidor estático local para confirmar que las cuatro páginas cargan sin errores de consola. Lo que **no** se hizo es un login real de punta a punta contra el proyecto de Firebase de producción (crear un pedido, invitar gente, cargar una recepción) — eso, y sobre todo la sección de Historial de `admin-local.js` (la más grande y la única sin ningún test automatizado), conviene probarlas a mano antes de invitar usuarios reales.
 
 ## Roles
 

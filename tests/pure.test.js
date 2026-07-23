@@ -6,6 +6,7 @@ import {
   formatPrice,
   escapeHtml,
   receiptDiffClass,
+  formatPeriod,
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
@@ -72,6 +73,23 @@ describe('receiptDiffClass', () => {
 
   it('devuelve over si llegó más de lo pedido', () => {
     expect(receiptDiffClass(true, 3)).toBe('receipt-diff-over');
+  });
+});
+
+describe('formatPeriod', () => {
+  it('formatea el rango sin año por defecto', () => {
+    expect(formatPeriod({ periodStart: '2026-07-12', periodEnd: '2026-07-26' })).toBe('12 jul — 26 jul');
+  });
+
+  it('incluye el año si se pide con includeYear', () => {
+    expect(formatPeriod({ periodStart: '2026-07-12', periodEnd: '2026-07-26' }, { includeYear: true })).toBe(
+      '12 jul 2026 — 26 jul 2026'
+    );
+  });
+
+  it('devuelve "" si falta alguna de las dos fechas', () => {
+    expect(formatPeriod({ periodStart: '2026-07-12' })).toBe('');
+    expect(formatPeriod({})).toBe('');
   });
 });
 

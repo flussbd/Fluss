@@ -2,7 +2,7 @@
 
 Primera versión de Fluss: HTML/CSS/JavaScript plano (sin build step, sin framework) con Firebase Authentication + Firestore como backend. Multi-salón: varios salones independientes comparten la misma app, cada uno con su catálogo, equipo y pedidos separados.
 
-> Igual que en el proyecto anterior: no pude ejecutar ni probar esto contra un proyecto real de Firebase en este entorno (no hay forma de crear un proyecto de Firebase ni correr el Emulator Suite acá). Lo que sigue es una revisión manual cuidadosa del código — no un build verificado. Antes de usarlo en serio, córranlo contra un proyecto de prueba y prueben las reglas con el Firebase Emulator Suite.
+> Actualización: a diferencia de lo que decía esta nota antes, sí se pudo probar bastante. Los tests de lógica pura (`npm test`) y de `firestore.rules` contra el Firebase Emulator Suite (`npm run test:rules`) corren y pasan (16 y 28 casos respectivamente), y la app se levantó con un servidor estático local para confirmar que las cuatro páginas cargan sin errores de consola. Lo que **no** se hizo es un login real de punta a punta contra el proyecto de Firebase de producción (crear un pedido, invitar gente, cargar una recepción) — eso, y sobre todo la sección de Historial de `admin-local.js` (la más grande y la única sin ningún test automatizado), conviene probarlas a mano antes de invitar usuarios reales.
 
 ## Roles
 
@@ -55,8 +55,13 @@ fluss/
 │   ├── firebase-init.js     # initializeApp/getAuth/getFirestore
 │   ├── auth.js               # login, logout, reclamo de invitación, guard de rol
 │   ├── db.js                  # helpers de Firestore + consolidación (funciones puras)
+│   ├── ui.js                   # helpers de UI compartidos entre vistas (sí tocan el DOM)
 │   ├── basic.js
-│   ├── admin-local.js
+│   ├── admin-local.js          # orquestador: init, dashboard, período/auto-cierre, historial
+│   ├── admin-local-state.js    # estado compartido (profile/categories/products/order/...) entre los módulos de admin-local
+│   ├── admin-local-catalog.js  # catálogo (categorías/productos, import masivo) + modal editar producto
+│   ├── admin-local-team.js     # equipo (invitaciones + usuarios)
+│   ├── admin-local-export.js   # descargar pedido consolidado (TXT/Excel) + modal proveedor
 │   └── admin-plataforma.js
 ├── firestore.rules
 └── README.md
@@ -80,7 +85,8 @@ fluss/
 
 ## Cosas para revisar antes de confiar en esto
 
-- **Reglas de Firestore no probadas**: las escribí con cuidado (incluyendo el patrón `get()` para validar invitaciones), pero no las corrí contra el Emulator Suite. Es el punto de mayor riesgo de todo el proyecto — pruébenlas antes de invitar gente real.
+- **Reglas de Firestore: ahora sí probadas, pero solo con casos sintéticos**: `tests/firestore.rules.test.js` corre 28 casos contra el Firebase Emulator Suite (`npm run test:rules`) — incluye el patrón `get()` para validar invitaciones, aislamiento entre salones, y los estados bloqueado/inactivo. Sigue siendo buena idea probarlas a mano contra un proyecto de prueba antes de invitar gente real: los tests cubren los casos que se nos ocurrieron, no necesariamente todos los que importan.
+- **Sin tests de UI**: los tests existentes cubren lógica pura (`tests/pure.test.js`) y reglas de Firestore, pero ninguna vista tiene cobertura automatizada. La sección de Historial en `admin-local.js` es la más grande (~600 líneas) y la que mezcla más renderizado, cálculo y escrituras — es la que más conviene revisar a mano.
 - **Índice compuesto probable**: la consulta del historial (`listenCompletedOrders`, filtra por `status` y ordena por `closedAt`) puede pedirles crear un índice compuesto la primera vez que la corran — Firestore muestra un link en la consola del navegador para crearlo con un clic.
 - **Versión del SDK de Firebase**: uso `10.12.2` fijo en las URLs de CDN. No tengo forma de confirmar si es la última disponible hoy — revisen https://firebase.google.com/docs/web/setup.
 - **Generar PDF**: usa el diálogo de impresión del navegador sobre la vista consolidada, no una librería. Si quieren un archivo PDF sin ese diálogo, habría que sumar algo como `jsPDF` — revisen su documentación vigente antes de fijar la integración.

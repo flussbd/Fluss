@@ -34,8 +34,13 @@ async function init() {
     const input = document.getElementById('salonNameInput');
     const name = input.value.trim();
     if (!name) return;
-    await createSalon(name, user.uid);
-    input.value = '';
+    try {
+      await createSalon(name, user.uid);
+      input.value = '';
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo crear el salón. Probá de nuevo.');
+    }
   });
 
   setupInviteModal();
@@ -61,9 +66,14 @@ function setupInviteModal() {
   document.getElementById('inviteConfirmBtn').addEventListener('click', async () => {
     const email = document.getElementById('inviteAdminEmail').value.trim().toLowerCase();
     if (!email || !inviteTargetSalonId) return;
-    await createInvite(email, 'local_admin', inviteTargetSalonId, user.uid);
-    modal.hidden = true;
-    document.getElementById('inviteAdminEmail').value = '';
+    try {
+      await createInvite(email, 'local_admin', inviteTargetSalonId, user.uid);
+      modal.hidden = true;
+      document.getElementById('inviteAdminEmail').value = '';
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo invitar al administrador. Probá de nuevo.');
+    }
   });
 }
 
@@ -124,7 +134,12 @@ function buildSalonRow(salon) {
     if (newName === null) return;
     const trimmed = newName.trim();
     if (!trimmed || trimmed === salon.name) return;
-    await updateSalonName(salon.id, trimmed);
+    try {
+      await updateSalonName(salon.id, trimmed);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo renombrar el salón. Probá de nuevo.');
+    }
   });
   headActions.appendChild(renameBtn);
 
@@ -138,13 +153,23 @@ function buildSalonRow(salon) {
           `¿Dar de baja "${salon.name}"? El equipo no va a poder seguir usando la app (catálogo, pedidos), pero no se borra ningún dato y podés reactivarlo cuando quieras.`
         )
       ) {
-        await setSalonActive(salon.id, false);
+        try {
+          await setSalonActive(salon.id, false);
+        } catch (err) {
+          console.error(err);
+          alert('No se pudo dar de baja el salón. Probá de nuevo.');
+        }
       }
     });
   } else {
     toggleSalonBtn.textContent = 'Reactivar salón';
     toggleSalonBtn.addEventListener('click', async () => {
-      await setSalonActive(salon.id, true);
+      try {
+        await setSalonActive(salon.id, true);
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo reactivar el salón. Probá de nuevo.');
+      }
     });
   }
   headActions.appendChild(toggleSalonBtn);
@@ -213,7 +238,12 @@ function buildAdminRow(admin, salon) {
     if (newName === null) return;
     const trimmed = newName.trim();
     if (!trimmed || trimmed === admin.name) return;
-    await updateUserName(admin.id, trimmed);
+    try {
+      await updateUserName(admin.id, trimmed);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo renombrar al administrador. Probá de nuevo.');
+    }
   });
   actions.appendChild(editBtn);
 
@@ -241,7 +271,13 @@ function buildAdminRow(admin, salon) {
       const targetSalon = salons.find((s) => s.id === newSalonId);
       const ok = confirm(`¿Mover a "${admin.name}" al salón "${targetSalon?.name || newSalonId}"?`);
       select.value = '';
-      if (ok) await reassignLocalAdminSalon(admin.id, newSalonId);
+      if (!ok) return;
+      try {
+        await reassignLocalAdminSalon(admin.id, newSalonId);
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo reasignar al administrador. Probá de nuevo.');
+      }
     });
     actions.appendChild(select);
   }
@@ -251,13 +287,22 @@ function buildAdminRow(admin, salon) {
   if (isInactive) {
     toggleBtn.textContent = 'Reactivar';
     toggleBtn.addEventListener('click', async () => {
-      await setUserStatus(admin.id, 'active');
+      try {
+        await setUserStatus(admin.id, 'active');
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo reactivar al administrador. Probá de nuevo.');
+      }
     });
   } else {
     toggleBtn.textContent = 'Dar de baja';
     toggleBtn.addEventListener('click', async () => {
-      if (confirm(`¿Dar de baja a "${admin.name}"? Deja de poder entrar a la app. Podés reactivarlo después.`)) {
+      if (!confirm(`¿Dar de baja a "${admin.name}"? Deja de poder entrar a la app. Podés reactivarlo después.`)) return;
+      try {
         await setUserStatus(admin.id, 'inactive');
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo dar de baja al administrador. Probá de nuevo.');
       }
     });
   }

@@ -13,7 +13,8 @@ import {
   setMyItem,
   compareProductsByShade,
 } from './db.js';
-import { formatPrice, escapeHtml } from './pure.js';
+import { formatPrice, escapeHtml, formatPeriod } from './pure.js';
+import { buildHistStatEl } from './ui.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
 
@@ -171,14 +172,6 @@ function updateOrderUI() {
   periodLabelEl.textContent =
     `Período: ${formatPeriod(order)}` + (order.status === 'draft' && order.periodEndTime ? ` · cierra ${order.periodEndTime}` : '');
   closedAlertEl.classList.toggle('hidden', order.status === 'draft');
-}
-
-function formatPeriod(o) {
-  if (!o.periodStart || !o.periodEnd) return '';
-  const opts = { day: 'numeric', month: 'short' };
-  const start = new Date(o.periodStart + 'T00:00:00').toLocaleDateString('es', opts);
-  const end = new Date(o.periodEnd + 'T00:00:00').toLocaleDateString('es', opts);
-  return `${start} — ${end}`;
 }
 
 function renderCategoryFilter() {
@@ -435,17 +428,7 @@ function renderMyHistory(orders) {
 
 /** Construye una columna label+valor para la grilla de detalle del Historial. */
 function buildHistStat(label, value, tone = null) {
-  const wrap = document.createElement('section');
-  wrap.className = 'hist-stat';
-  const labelEl = document.createElement('span');
-  labelEl.className = 'hist-stat-label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('span');
-  valueEl.className = `hist-stat-value${tone ? ' hist-stat-' + tone : ''}`;
-  valueEl.textContent = value;
-  wrap.appendChild(labelEl);
-  wrap.appendChild(valueEl);
-  return wrap;
+  return buildHistStatEl(label, value, tone).wrap;
 }
 
 function renderCatalog() {
@@ -561,22 +544,35 @@ function buildProductCard(product, local) {
 
 function changeQuantity(productId, quantity, notes) {
   const clamped = Math.max(0, quantity);
+  const previous = myItems[productId];
   myItems[productId] = { quantity: clamped, notes: notes || null };
   renderCatalog();
   renderMyOrder();
   updateBadge();
-  persistItem(productId, clamped, notes);
+  persistItem(productId, clamped, notes, previous, true);
 }
 
 /** Actualiza solo la nota sin volver a dibujar la grilla (evita perder el foco del input). */
 function changeNotesOnly(productId, quantity, notes) {
+  const previous = myItems[productId];
   myItems[productId] = { quantity, notes: notes || null };
   updateBadge();
-  persistItem(productId, quantity, notes);
+  persistItem(productId, quantity, notes, previous, false);
 }
 
-function persistItem(productId, quantity, notes) {
+function persistItem(productId, quantity, notes, previous, rerenderOnError) {
   setMyItem(profile.salonId, order.id, user.uid, profile.name, productId, quantity, notes || null).catch((err) => {
     console.error('No se pudo guardar el cambio:', err);
+    if (previous) {
+      myItems[productId] = previous;
+    } else {
+      delete myItems[productId];
+    }
+    updateBadge();
+    if (rerenderOnError) {
+      renderCatalog();
+      renderMyOrder();
+    }
+    alert('No se pudo guardar el cambio. Probá de nuevo.');
   });
 }

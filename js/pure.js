@@ -112,3 +112,12 @@ export function receiptDiffClass(hasReceived, diff) {
   if (diff === 0) return 'receipt-diff-ok';
   return diff < 0 ? 'receipt-diff-short' : 'receipt-diff-over';
 }
+
+/** Formatea el rango de fechas de un período ("12 jul — 26 jul" o, con año, "12 jul 2026 — 26 jul 2026"). */
+export function formatPeriod(order, { includeYear = false } = {}) {
+  if (!order.periodStart || !order.periodEnd) return '';
+  const opts = includeYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' };
+  const start = new Date(order.periodStart + 'T00:00:00').toLocaleDateString('es', opts);
+  const end = new Date(order.periodEnd + 'T00:00:00').toLocaleDateString('es', opts);
+  return `${start} — ${end}`;
+}

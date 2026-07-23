@@ -15,21 +15,22 @@ import {
   finalizeReception,
   closeOrder,
   setAdjustment,
-  addCategory,
-  addProduct,
-  updateProduct,
-  deactivateProduct,
-  activateProduct,
   setItemReceivedQuantity,
-  createInvite,
-  updateUserName,
-  setUserStatus,
   consolidateByProduct,
   consolidateByUser,
-  compareProductsByShade,
 } from './db.js';
-import { formatPrice, escapeHtml, receiptDiffClass } from './pure.js';
-import { doc, getDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod } from './pure.js';
+import { buildHistStatEl } from './ui.js';
+import { state } from './admin-local-state.js';
+import { setupCatalog, renderCategoryOptions, renderProductList } from './admin-local-catalog.js';
+import { setupTeam, renderInviteList, renderUserList } from './admin-local-team.js';
+import {
+  downloadOrderTxt,
+  downloadOrderXlsx,
+  openProviderExportModal,
+  setupProviderExportModal,
+} from './admin-local-export.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
 
 const STATUS_LABEL = {
@@ -38,14 +39,6 @@ const STATUS_LABEL = {
   completed: 'Pedido enviado a proveedor',
 };
 
-let user, profile;
-let categories = [];
-let products = [];
-let users = [];
-let order = null;
-let items = [];
-let adjustments = [];
-let providerExportContext = null;
 let consolidatedView = 'byProduct'; // 'byProduct' | 'byUser'
 let unsubItems = null;
 let unsubAdjustments = null;
@@ -56,8 +49,8 @@ init();
 
 async function init() {
   const auth = await requireRole(['local_admin']);
-  user = auth.user;
-  profile = auth.profile;
+  state.user = auth.user;
+  state.profile = auth.profile;
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     await logout();
@@ -66,39 +59,38 @@ async function init() {
 
   setupNav();
   setupPeriodModal();
-  setupCatalogForms();
-  setupProductEditModal();
+  setupCatalog();
   setupProviderExportModal();
-  setupInviteForm();
+  setupTeam();
 
-  const salonSnap = await getDoc(doc(db, 'salons', profile.salonId));
+  const salonSnap = await getDoc(doc(db, 'salons', state.profile.salonId));
   if (salonSnap.exists()) document.getElementById('salonName').textContent = salonSnap.data().name;
 
-  listenCategories(profile.salonId, (cats) => {
-    categories = cats;
+  listenCategories(state.profile.salonId, (cats) => {
+    state.categories = cats;
     renderCategoryOptions();
     renderDashboard();
   });
 
-  listenAllProducts(profile.salonId, (prods) => {
-    products = prods;
+  listenAllProducts(state.profile.salonId, (prods) => {
+    state.products = prods;
     renderProductList();
     renderDashboard();
   });
 
-  listenCurrentOrder(profile.salonId, (currentOrder) => {
-    order = currentOrder;
+  listenCurrentOrder(state.profile.salonId, (currentOrder) => {
+    state.order = currentOrder;
     if (unsubItems) unsubItems();
     if (unsubAdjustments) unsubAdjustments();
-    items = [];
-    adjustments = [];
-    if (order) {
-      unsubItems = listenOrderItems(profile.salonId, order.id, (its) => {
-        items = its;
+    state.items = [];
+    state.adjustments = [];
+    if (state.order) {
+      unsubItems = listenOrderItems(state.profile.salonId, state.order.id, (its) => {
+        state.items = its;
         renderDashboard();
       });
-      unsubAdjustments = listenAdjustments(profile.salonId, order.id, (adjs) => {
-        adjustments = adjs;
+      unsubAdjustments = listenAdjustments(state.profile.salonId, state.order.id, (adjs) => {
+        state.adjustments = adjs;
         renderDashboard();
       });
     }
@@ -107,12 +99,12 @@ async function init() {
   });
 
   subscribeHistory();
-  listenUsersOfSalon(profile.salonId, (list) => {
-    users = list;
+  listenUsersOfSalon(state.profile.salonId, (list) => {
+    state.users = list;
     renderUserList(list);
     renderDashboard();
   });
-  listenInvitesOfSalon(profile.salonId, renderInviteList);
+  listenInvitesOfSalon(state.profile.salonId, renderInviteList);
 
   startAutoCloseTicker();
 }
@@ -135,44 +127,45 @@ function setupNav() {
 // Dashboard: pedido actual, consolidado / por usuario
 // ---------------------------------------------------------------------------
 function renderDashboard() {
-  document.getElementById('noOrderCard').classList.toggle('hidden', !!order);
-  document.getElementById('orderCard').classList.toggle('hidden', !order);
-  document.getElementById('consolidatedSection').classList.toggle('hidden', !order);
-  document.getElementById('draftHint').classList.toggle('hidden', !order || order.status !== 'draft');
+  document.getElementById('noOrderCard').classList.toggle('hidden', !!state.order);
+  document.getElementById('orderCard').classList.toggle('hidden', !state.order);
+  document.getElementById('consolidatedSection').classList.toggle('hidden', !state.order);
+  document.getElementById('draftHint').classList.toggle('hidden', !state.order || state.order.status !== 'draft');
 
   renderActionsBar();
 
-  if (!order) return;
+  if (!state.order) return;
 
   document.getElementById('periodLabel').textContent =
-    formatPeriod(order) + (order.status === 'draft' && order.periodEndTime ? ` · cierra ${order.periodEndTime}` : '');
+    formatPeriod(state.order, { includeYear: true }) +
+    (state.order.status === 'draft' && state.order.periodEndTime ? ` · cierra ${state.order.periodEndTime}` : '');
   const badge = document.getElementById('statusBadge');
-  badge.textContent = STATUS_LABEL[order.status];
-  badge.className = `badge badge-${order.status}`;
+  badge.textContent = STATUS_LABEL[state.order.status];
+  badge.className = `badge badge-${state.order.status}`;
   updateAutoCloseCountdown();
 
-  const groups = consolidateByProduct(items, products, categories, adjustments);
+  const groups = consolidateByProduct(state.items, state.products, state.categories, state.adjustments);
   const totalProducts = groups.reduce((s, g) => s + g.items.length, 0);
   const totalUnits = groups.reduce((s, g) => s + g.items.reduce((s2, i) => s2 + i.totalQuantity, 0), 0);
-  const totalUsers = new Set(items.map((i) => i.userId)).size;
+  const totalUsers = new Set(state.items.map((i) => i.userId)).size;
   document.getElementById('statProducts').textContent = String(totalProducts);
   document.getElementById('statUnits').textContent = String(totalUnits);
   document.getElementById('statUsers').textContent = String(totalUsers);
 
   renderByProductView(groups);
-  renderByUserView(consolidateByUser(items, products));
+  renderByUserView(consolidateByUser(state.items, state.products));
 }
 
 function renderActionsBar() {
   const bar = document.getElementById('actionsBar');
   bar.innerHTML = '';
-  if (!order) return;
+  if (!state.order) return;
 
-  if (order.status === 'draft') {
-    bar.appendChild(makeButton('Cerrar período de solicitud', 'btn-secondary', () => startReview(profile.salonId, order.id)));
+  if (state.order.status === 'draft') {
+    bar.appendChild(makeButton('Cerrar período de solicitud', 'btn-secondary', handleStartReview));
   }
 
-  if (order.status === 'reviewing') {
+  if (state.order.status === 'reviewing') {
     bar.appendChild(makeButton('Generar PDF de orden', 'btn-secondary', () => window.print()));
     bar.appendChild(makeButton('Descargar TXT', 'btn-secondary', () => downloadOrderTxt()));
     bar.appendChild(makeButton('Descargar Excel', 'btn-secondary', () => downloadOrderXlsx()));
@@ -182,15 +175,24 @@ function renderActionsBar() {
   }
 }
 
+async function handleStartReview() {
+  try {
+    await startReview(state.profile.salonId, state.order.id);
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo cerrar el período de solicitud. Probá de nuevo.');
+  }
+}
+
 async function handleReopenDraft() {
-  const endOfPeriod = getPeriodEndDate(order);
+  const endOfPeriod = getPeriodEndDate(state.order);
   const pastDeadline = endOfPeriod && new Date() > endOfPeriod;
   const warn = pastDeadline
     ? '\n\nOjo: la fecha/hora de cierre de este período ya pasó, así que se va a volver a cerrar solo apenas alguien tenga el panel abierto unos segundos (o lo vuelva a abrir).'
     : '';
   if (!confirm(`¿Reabrir este período para que el equipo pueda seguir agregando o corrigiendo insumos?${warn}`)) return;
   try {
-    await reopenDraft(profile.salonId, order.id);
+    await reopenDraft(state.profile.salonId, state.order.id);
   } catch (err) {
     console.error(err);
     alert('No se pudo reabrir el período. Probá de nuevo.');
@@ -223,7 +225,7 @@ function renderByProductView(groups) {
     container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a este período.</div>';
     return;
   }
-  const editable = order.status === 'draft' || order.status === 'reviewing';
+  const editable = state.order.status === 'draft' || state.order.status === 'reviewing';
   const template = document.getElementById('consolidatedRowTemplate');
 
   for (const group of groups) {
@@ -245,7 +247,7 @@ function renderByProductView(groups) {
       qtyInput.addEventListener('click', (e) => e.stopPropagation());
       qtyInput.addEventListener('change', () => {
         const value = Math.max(0, Number(qtyInput.value) || 0);
-        setAdjustment(profile.salonId, order.id, item.product.id, value, user.uid).catch(console.error);
+        setAdjustment(state.profile.salonId, state.order.id, item.product.id, value, state.user.uid).catch(console.error);
       });
 
       const detail = row.querySelector('.consolidated-row-detail');
@@ -269,8 +271,8 @@ function renderByUserView(userGroups) {
     container.innerHTML = '<div class="empty-state">Todavía nadie agregó insumos a este período.</div>';
     return;
   }
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
-  const userById = new Map(users.map((u) => [u.id, u]));
+  const categoryById = new Map(state.categories.map((c) => [c.id, c]));
+  const userById = new Map(state.users.map((u) => [u.id, u]));
   for (const group of userGroups) {
     const wrap = document.createElement('div');
     wrap.className = 'user-group';
@@ -333,7 +335,7 @@ function setupPeriodModal() {
       alert('La fecha "Hasta" no puede ser anterior a "Desde".');
       return;
     }
-    await createOrder(profile.salonId, start, end, endTime);
+    await createOrder(state.profile.salonId, start, end, endTime);
     modal.hidden = true;
   });
 }
@@ -352,11 +354,11 @@ function getPeriodEndDate(o) {
 }
 
 function maybeAutoCloseDraft() {
-  if (!order || order.status !== 'draft') return;
-  const endOfPeriod = getPeriodEndDate(order);
+  if (!state.order || state.order.status !== 'draft') return;
+  const endOfPeriod = getPeriodEndDate(state.order);
   if (!endOfPeriod) return;
   if (new Date() > endOfPeriod) {
-    startReview(profile.salonId, order.id).catch(console.error);
+    startReview(state.profile.salonId, state.order.id).catch(console.error);
   }
 }
 
@@ -379,11 +381,11 @@ function startAutoCloseTicker() {
 function updateAutoCloseCountdown() {
   const el = document.getElementById('autoCloseCountdown');
   if (!el) return;
-  if (!order || order.status !== 'draft') {
+  if (!state.order || state.order.status !== 'draft') {
     el.classList.add('hidden');
     return;
   }
-  const endOfPeriod = getPeriodEndDate(order);
+  const endOfPeriod = getPeriodEndDate(state.order);
   if (!endOfPeriod) {
     el.classList.add('hidden');
     return;
@@ -411,750 +413,9 @@ function formatCountdown(ms) {
 
 async function handleCloseFortnight() {
   if (!confirm('¿Cerrar este período y archivarlo? Esta acción no se puede deshacer.')) return;
-  await closeOrder(profile.salonId, order.id, user.uid);
+  await closeOrder(state.profile.salonId, state.order.id, state.user.uid);
   // El admin define las fechas del próximo pedido explícitamente desde
   // "No hay un pedido abierto" → no se abre uno automático.
-}
-
-// ---------------------------------------------------------------------------
-// Descargar pedido consolidado (TXT / CSV)
-// ---------------------------------------------------------------------------
-function downloadTextFile(filename, content, mime) {
-  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function downloadOrderTxt(o = order, groups = consolidateByProduct(items, products, categories, adjustments)) {
-  const lines = [`Pedido del período — ${formatPeriod(o)}`, ''];
-  for (const group of groups) {
-    lines.push(group.category.name.toUpperCase());
-    for (const item of group.items) {
-      const notes = item.breakdown.filter((b) => b.notes).map((b) => b.notes);
-      const meta = [item.product.brand, item.product.format].filter(Boolean).join(' · ');
-      const suffix = notes.length ? ` (${notes.join('; ')})` : '';
-      lines.push(`- ${item.product.name}${meta ? ' [' + meta + ']' : ''}: ${item.totalQuantity} unidades${suffix}`);
-    }
-    lines.push('');
-  }
-  downloadTextFile(`pedido-${o.periodStart}-a-${o.periodEnd}.txt`, lines.join('\n'), 'text/plain');
-}
-
-const collateEs = (a, b) => (a || '').localeCompare(b || '', 'es', { numeric: true, sensitivity: 'base' });
-
-/**
- * Aplana los grupos por categoría en una lista de productos (uno por
- * producto), ordenada por marca, categoría, línea, producto, tono y formato.
- */
-function flattenProductGroups(groups) {
-  const flat = [];
-  for (const group of groups) {
-    for (const item of group.items) {
-      flat.push({ product: item.product, categoryName: group.category.name, totalQuantity: item.totalQuantity });
-    }
-  }
-  flat.sort(
-    (a, b) =>
-      collateEs(a.product.brand, b.product.brand) ||
-      collateEs(a.categoryName, b.categoryName) ||
-      collateEs(a.product.line, b.product.line) ||
-      collateEs(a.product.name, b.product.name) ||
-      collateEs(a.product.shadeCode, b.product.shadeCode) ||
-      collateEs(a.product.format, b.product.format)
-  );
-  return flat;
-}
-
-/**
- * Arma las filas (header + datos + fila de totales) del detalle de
- * productos: precio, cantidad pedida, total, cantidad recibida (si ya se
- * cargó en el Historial) y la diferencia/costo entre ambas.
- */
-function buildProductSheetRows(flatItems, receivedByProduct) {
-  const header = [
-    'Marca',
-    'Categoria',
-    'Linea',
-    'Producto',
-    'Tono',
-    'Formato',
-    'Proveedor',
-    'Precio unitario',
-    'Pedido',
-    'Total',
-    'Recibido',
-    'Diferencia',
-    'Costo recibido',
-  ];
-  const rows = [header];
-  let totalPedido = 0;
-  let totalTotal = 0;
-  let totalRecibido = 0;
-  let totalCosto = 0;
-
-  for (const { product, categoryName, totalQuantity } of flatItems) {
-    const received = receivedByProduct.get(product.id);
-    const hasReceived = !!received && typeof received.receivedQuantity === 'number';
-    const receivedRaw = hasReceived ? received.receivedQuantity : null;
-    // Si ya se registró la recepción, usamos el precio "congelado" en ese
-    // momento (no el precio actual del producto, que puede haber cambiado).
-    const price = hasReceived && typeof received.unitPrice === 'number'
-      ? received.unitPrice
-      : typeof product.price === 'number'
-        ? product.price
-        : null;
-    const total = price !== null ? totalQuantity * price : '';
-    const cost = hasReceived && price !== null ? receivedRaw * price : '';
-
-    totalPedido += totalQuantity;
-    if (typeof total === 'number') totalTotal += total;
-    if (hasReceived) totalRecibido += receivedRaw;
-    if (typeof cost === 'number') totalCosto += cost;
-
-    rows.push([
-      product.brand || '',
-      categoryName,
-      product.line || '',
-      product.name,
-      product.shadeCode || '',
-      product.format || '',
-      product.supplierName || '',
-      price !== null ? price : '',
-      totalQuantity,
-      total,
-      hasReceived ? receivedRaw : '',
-      hasReceived ? receivedRaw - totalQuantity : '',
-      cost,
-    ]);
-  }
-
-  rows.push(['', '', '', '', '', '', '', 'TOTAL', totalPedido, totalTotal, totalRecibido, totalRecibido - totalPedido, totalCosto]);
-  return rows;
-}
-
-/**
- * Crea la hoja a partir de las filas: les da a las columnas indicadas en
- * `numericCols` (0-based) formato numérico sin decimales y con separador de
- * miles, y ajusta el ancho de todas las columnas al contenido.
- */
-function finalizeSheet(rows, numericCols) {
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  for (let r = 1; r < rows.length; r++) {
-    for (const c of numericCols) {
-      const addr = XLSX.utils.encode_cell({ r, c });
-      const cell = ws[addr];
-      if (cell && typeof cell.v === 'number') cell.z = '#,##0';
-    }
-  }
-  ws['!cols'] = rows[0].map((_, c) => {
-    let max = 0;
-    for (const row of rows) {
-      const v = row[c];
-      const len = v === null || v === undefined ? 0 : String(v).length;
-      if (len > max) max = len;
-    }
-    return { wch: Math.min(Math.max(max + 2, 8), 42) };
-  });
-  return ws;
-}
-
-/** Nombre de hoja válido para Excel: máx. 31 caracteres, sin \ / ? * [ ] : y sin repetirse. */
-function sanitizeSheetName(name, used) {
-  const base = String(name || 'Sin nombre').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Sin nombre';
-  let candidate = base;
-  let i = 2;
-  while (used.has(candidate.toLowerCase())) {
-    const suffix = ` (${i})`;
-    candidate = base.slice(0, 31 - suffix.length) + suffix;
-    i++;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
-}
-
-/**
- * Genera un .xlsx real (vía SheetJS, cargado como script global en admin-local.html)
- * con una hoja "Total" (consolidado por producto) y una hoja adicional por
- * cada persona del equipo, con lo que esa persona pidió.
- */
-function downloadOrderXlsx(
-  o = order,
-  groups = consolidateByProduct(items, products, categories, adjustments),
-  receivedByProduct = new Map(),
-  userGroups = consolidateByUser(items, products),
-  categoryById = new Map(categories.map((c) => [c.id, c]))
-) {
-  if (typeof XLSX === 'undefined') {
-    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
-    return;
-  }
-  const wb = XLSX.utils.book_new();
-  const usedNames = new Set();
-
-  const totalRows = buildProductSheetRows(flattenProductGroups(groups), receivedByProduct);
-  // Columnas numéricas de la hoja Total/proveedor: Precio unitario, Pedido,
-  // Total, Recibido, Diferencia, Costo recibido (índices 7 a 12).
-  XLSX.utils.book_append_sheet(wb, finalizeSheet(totalRows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName('Total', usedNames));
-
-  const userHeader = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Precio unitario', 'Total'];
-  for (const u of userGroups) {
-    const sorted = u.items.slice().sort(
-      (a, b) =>
-        collateEs(a.product.brand, b.product.brand) ||
-        collateEs(categoryById.get(a.product.categoryId)?.name, categoryById.get(b.product.categoryId)?.name) ||
-        collateEs(a.product.line, b.product.line) ||
-        collateEs(a.product.name, b.product.name) ||
-        collateEs(a.product.shadeCode, b.product.shadeCode) ||
-        collateEs(a.product.format, b.product.format)
-    );
-    const rows = [userHeader];
-    let totalQty = 0;
-    let totalCost = 0;
-    for (const { product, quantity } of sorted) {
-      const received = receivedByProduct.get(product.id);
-      const price = received && typeof received.unitPrice === 'number'
-        ? received.unitPrice
-        : typeof product.price === 'number'
-          ? product.price
-          : null;
-      const total = price !== null ? quantity * price : '';
-      totalQty += quantity;
-      if (typeof total === 'number') totalCost += total;
-      rows.push([
-        product.brand || '',
-        categoryById.get(product.categoryId)?.name || '',
-        product.line || '',
-        product.name,
-        product.shadeCode || '',
-        product.format || '',
-        quantity,
-        price !== null ? price : '',
-        total,
-      ]);
-    }
-    rows.push(['', '', '', '', '', 'TOTAL', totalQty, '', totalCost]);
-    // Columnas numéricas de la hoja por usuario: Cantidad, Precio unitario, Total.
-    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6, 7, 8]), sanitizeSheetName(u.userName, usedNames));
-  }
-
-  XLSX.writeFile(wb, `pedido-${o.periodStart}-a-${o.periodEnd}.xlsx`);
-}
-
-/**
- * Agrupa los productos del pedido por proveedor (clave = nombre del
- * proveedor, o "Sin proveedor" si no tiene). Útil tanto para armar el modal
- * de selección como para generar el propio archivo.
- */
-function groupFlatItemsByProvider(groups) {
-  const flat = flattenProductGroups(groups);
-  const byProvider = new Map();
-  for (const entry of flat) {
-    const key = entry.product.supplierName || 'Sin proveedor';
-    const list = byProvider.get(key) || [];
-    list.push(entry);
-    byProvider.set(key, list);
-  }
-  return byProvider;
-}
-
-/**
- * Genera un .xlsx por proveedor: si `onlyProvider` es null, arma una hoja
- * por cada proveedor (y "Sin proveedor" si aplica); si se pasa un nombre de
- * proveedor puntual, el archivo trae solo esa hoja con lo suyo.
- */
-function downloadOrderXlsxByProvider(
-  o = order,
-  groups = consolidateByProduct(items, products, categories, adjustments),
-  receivedByProduct = new Map(),
-  onlyProvider = null
-) {
-  if (typeof XLSX === 'undefined') {
-    alert('No se pudo cargar el generador de Excel (revisá tu conexión a internet e intentá de nuevo).');
-    return;
-  }
-  const byProvider = groupFlatItemsByProvider(groups);
-  let providerNames = Array.from(byProvider.keys()).sort((a, b) => collateEs(a, b));
-  if (onlyProvider) {
-    providerNames = providerNames.filter((name) => name === onlyProvider);
-    if (providerNames.length === 0) {
-      alert('Ese proveedor no tiene productos en este pedido.');
-      return;
-    }
-  }
-
-  const wb = XLSX.utils.book_new();
-  const usedNames = new Set();
-  for (const providerName of providerNames) {
-    const rows = buildProductSheetRows(byProvider.get(providerName), receivedByProduct);
-    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName(providerName, usedNames));
-  }
-  const suffix = onlyProvider ? `-${onlyProvider.replace(/[\\/:*?"<>|]/g, ' ').trim()}` : '';
-  XLSX.writeFile(wb, `pedido-por-proveedor${suffix}-${o.periodStart}-a-${o.periodEnd}.xlsx`);
-}
-
-// ---------------------------------------------------------------------------
-// Modal: elegir proveedor antes de descargar
-// ---------------------------------------------------------------------------
-function setupProviderExportModal() {
-  const modal = document.getElementById('providerExportModal');
-
-  document.getElementById('providerExportCancelBtn').addEventListener('click', () => {
-    modal.hidden = true;
-  });
-
-  document.getElementById('providerExportConfirmBtn').addEventListener('click', () => {
-    if (!providerExportContext) return;
-    const { o, groups, receivedByProduct } = providerExportContext;
-    const selected = document.getElementById('providerExportSelect').value;
-    downloadOrderXlsxByProvider(o, groups, receivedByProduct, selected || null);
-    modal.hidden = true;
-  });
-}
-
-function openProviderExportModal(
-  o = order,
-  groups = consolidateByProduct(items, products, categories, adjustments),
-  receivedByProduct = new Map()
-) {
-  providerExportContext = { o, groups, receivedByProduct };
-
-  const providerNames = Array.from(groupFlatItemsByProvider(groups).keys()).sort((a, b) => collateEs(a, b));
-  const select = document.getElementById('providerExportSelect');
-  select.innerHTML = '';
-  const allOpt = document.createElement('option');
-  allOpt.value = '';
-  allOpt.textContent = 'Todos los proveedores (una hoja por cada uno)';
-  select.appendChild(allOpt);
-  for (const name of providerNames) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    select.appendChild(opt);
-  }
-
-  document.getElementById('providerExportModal').hidden = false;
-}
-
-// ---------------------------------------------------------------------------
-// Modal: editar producto (todos los campos, no solo el precio)
-// ---------------------------------------------------------------------------
-function setupProductEditModal() {
-  const modal = document.getElementById('productEditModal');
-
-  document.getElementById('productEditCancelBtn').addEventListener('click', () => {
-    modal.hidden = true;
-  });
-
-  document.getElementById('productEditSaveBtn').addEventListener('click', async () => {
-    const productId = modal.dataset.productId;
-    if (!productId) return;
-
-    const name = document.getElementById('editProductName').value.trim();
-    const brand = document.getElementById('editProductBrand').value.trim();
-    const line = document.getElementById('editProductLine').value.trim();
-    const categoryId = document.getElementById('editProductCategory').value;
-    const shadeCode = document.getElementById('editProductShade').value.trim();
-    const format = document.getElementById('editProductFormat').value.trim();
-    const supplierName = document.getElementById('editProductSupplier').value.trim();
-    const productCode = document.getElementById('editProductCode').value.trim();
-    const priceRaw = document.getElementById('editProductPrice').value.trim();
-    const price = priceRaw ? Number(priceRaw) : null;
-
-    if (!name || !brand || !categoryId) {
-      alert('Completá al menos nombre, marca y categoría.');
-      return;
-    }
-    if (priceRaw && Number.isNaN(price)) {
-      alert('Ingresá un precio válido.');
-      return;
-    }
-
-    try {
-      await updateProduct(profile.salonId, productId, {
-        name,
-        categoryId,
-        brand,
-        line,
-        shadeCode,
-        format,
-        supplierName,
-        productCode,
-        price,
-      });
-      modal.hidden = true;
-    } catch (err) {
-      console.error(err);
-      alert('No se pudo guardar el producto. Probá de nuevo.');
-    }
-  });
-}
-
-function openProductEditModal(p) {
-  const modal = document.getElementById('productEditModal');
-  modal.dataset.productId = p.id;
-
-  document.getElementById('editProductName').value = p.name || '';
-  document.getElementById('editProductBrand').value = p.brand || '';
-  document.getElementById('editProductLine').value = p.line || '';
-  document.getElementById('editProductShade').value = p.shadeCode || '';
-  document.getElementById('editProductFormat').value = p.format || '';
-  document.getElementById('editProductSupplier').value = p.supplierName || '';
-  document.getElementById('editProductCode').value = p.productCode || '';
-  document.getElementById('editProductPrice').value = typeof p.price === 'number' ? p.price : '';
-
-  const select = document.getElementById('editProductCategory');
-  select.innerHTML = '';
-  for (const c of categories) {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name;
-    select.appendChild(opt);
-  }
-  select.value = p.categoryId;
-
-  modal.hidden = false;
-}
-
-// ---------------------------------------------------------------------------
-// Catálogo
-// ---------------------------------------------------------------------------
-function setupCatalogForms() {
-  document.getElementById('categoryForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('categoryName');
-    const name = input.value.trim();
-    if (!name) return;
-    await addCategory(profile.salonId, name, categories.length);
-    input.value = '';
-  });
-
-  document.getElementById('productForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('productName').value.trim();
-    const brand = document.getElementById('productBrand').value.trim();
-    const line = document.getElementById('productLine').value.trim();
-    const categoryId = document.getElementById('productCategory').value;
-    const shadeCode = document.getElementById('productShade').value.trim();
-    const format = document.getElementById('productFormat').value.trim();
-    const supplierName = document.getElementById('productSupplier').value.trim();
-    const productCode = document.getElementById('productCode').value.trim();
-    const priceRaw = document.getElementById('productPrice').value.trim();
-    const price = priceRaw ? Number(priceRaw) : null;
-    if (!name || !brand || !categoryId) return;
-    await addProduct(profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode, price });
-    e.target.reset();
-  });
-
-  document.getElementById('bulkImportBtn').addEventListener('click', async () => {
-    const textarea = document.getElementById('bulkImportInput');
-    const resultEl = document.getElementById('bulkImportResult');
-    const text = textarea.value;
-    if (!text.trim()) return;
-
-    const btn = document.getElementById('bulkImportBtn');
-    btn.disabled = true;
-    resultEl.textContent = 'Cargando…';
-
-    try {
-      const result = await bulkImportCatalog(text);
-      resultEl.textContent = `Listo: ${result.categories} categoría(s) nueva(s) y ${result.products} producto(s) agregados.`;
-      textarea.value = '';
-    } catch (err) {
-      console.error(err);
-      resultEl.textContent = 'Hubo un error, revisá la consola del navegador (F12) para más detalle.';
-    } finally {
-      btn.disabled = false;
-    }
-  });
-}
-
-/**
- * Parsea un texto tipo:
- *   # Categoría
- *   Producto; marca; línea; tono; formato; proveedor; código
- * y crea las categorías/productos que no existan todavía (compara nombres
- * sin importar mayúsculas/minúsculas para no duplicar categorías). Solo el
- * nombre del producto es obligatorio; el resto se puede dejar vacío.
- */
-async function bulkImportCatalog(text) {
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  const categoryIdByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
-  let sortOrder = categories.length;
-  let currentCategoryId = null;
-  const created = { categories: 0, products: 0 };
-
-  for (const rawLine of lines) {
-    if (rawLine.startsWith('#')) {
-      const name = rawLine.slice(1).trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      if (categoryIdByName.has(key)) {
-        currentCategoryId = categoryIdByName.get(key);
-      } else {
-        const ref = await addCategory(profile.salonId, name, sortOrder++);
-        currentCategoryId = ref.id;
-        categoryIdByName.set(key, ref.id);
-        created.categories++;
-      }
-    } else {
-      if (!currentCategoryId) continue; // producto listado antes de cualquier "# Categoría": se ignora
-      const parts = rawLine.split(';').map((s) => s.trim());
-      const [name, brand, productLine, shadeCode, format, supplierName, productCode, priceRaw] = parts;
-      if (!name) continue;
-      // Si pegan un precio inválido o negativo (typo), no lo guardamos tal
-      // cual: lo dejamos en null (negativo) o lo ignoramos (no numérico).
-      const priceParsed = priceRaw ? Number(priceRaw) : null;
-      const price = priceParsed !== null && !Number.isNaN(priceParsed) ? Math.max(0, priceParsed) : null;
-      await addProduct(profile.salonId, {
-        name,
-        categoryId: currentCategoryId,
-        brand: brand || '',
-        line: productLine || '',
-        shadeCode: shadeCode || '',
-        format: format || '',
-        supplierName: supplierName || '',
-        productCode: productCode || '',
-        price,
-      });
-      created.products++;
-    }
-  }
-
-  return created;
-}
-
-function renderCategoryOptions() {
-  const select = document.getElementById('productCategory');
-  const current = select.value;
-  select.innerHTML = '<option value="" disabled selected>Elegí una categoría</option>';
-  for (const c of categories) {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name;
-    select.appendChild(opt);
-  }
-  if (current) select.value = current;
-}
-
-function renderProductList() {
-  const container = document.getElementById('productList');
-  container.innerHTML = '';
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
-
-  if (products.length === 0) {
-    container.innerHTML = '<div class="empty-state">Todavía no cargaste productos.</div>';
-    return;
-  }
-
-  const activeProducts = products.filter((p) => p.active).sort(compareProductsByShade);
-  const inactiveProducts = products.filter((p) => !p.active).sort(compareProductsByShade);
-
-  if (activeProducts.length === 0) {
-    container.innerHTML = '<div class="empty-state">No hay productos activos.</div>';
-  } else {
-    for (const p of activeProducts) container.appendChild(buildProductRow(p, categoryById, false));
-  }
-
-  if (inactiveProducts.length > 0) {
-    const title = document.createElement('h2');
-    title.className = 'category-title';
-    title.textContent = 'Productos desactivados';
-    container.appendChild(title);
-    for (const p of inactiveProducts) container.appendChild(buildProductRow(p, categoryById, true));
-  }
-}
-
-function buildProductRow(p, categoryById, isInactive) {
-  const row = document.createElement('div');
-  row.className = 'list-row';
-  // El código de tono se muestra aparte, como una "ficha de color" (chip
-  // monoespaciado) en vez de perderse mezclado con el resto del texto.
-  const metaParts = [
-    categoryById.get(p.categoryId)?.name || '—',
-    p.brand,
-    p.line,
-    p.format,
-    p.supplierName,
-    formatPrice(p.price),
-  ].filter(Boolean);
-  row.innerHTML = `
-    <div>
-      <div class="product-name-row">
-        <p class="list-row-title">${escapeHtml(p.name)}</p>
-        ${p.shadeCode ? `<span class="shade-chip">${escapeHtml(p.shadeCode)}</span>` : ''}
-      </div>
-      <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
-    </div>
-  `;
-
-  const actions = document.createElement('div');
-  actions.style.display = 'flex';
-  actions.style.gap = '6px';
-
-  const editBtn = document.createElement('button');
-  editBtn.className = 'btn btn-ghost btn-sm';
-  editBtn.textContent = 'Editar';
-  editBtn.addEventListener('click', () => openProductEditModal(p));
-  actions.appendChild(editBtn);
-
-  const btn = document.createElement('button');
-  btn.className = 'btn btn-ghost btn-sm';
-  if (isInactive) {
-    btn.textContent = 'Reactivar';
-    btn.addEventListener('click', async () => {
-      await activateProduct(profile.salonId, p.id);
-    });
-  } else {
-    btn.textContent = 'Desactivar';
-    btn.addEventListener('click', async () => {
-      if (confirm(`¿Quitar "${p.name}" del catálogo?`)) await deactivateProduct(profile.salonId, p.id);
-    });
-  }
-  actions.appendChild(btn);
-  row.appendChild(actions);
-  return row;
-}
-
-// ---------------------------------------------------------------------------
-// Equipo (invitaciones + usuarios)
-// ---------------------------------------------------------------------------
-function setupInviteForm() {
-  document.getElementById('inviteForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('inviteEmail');
-    const email = input.value.trim().toLowerCase();
-    if (!email) return;
-    await createInvite(email, 'basic', profile.salonId, user.uid);
-    input.value = '';
-  });
-}
-
-function renderInviteList(invites) {
-  const container = document.getElementById('inviteList');
-  container.innerHTML = '';
-  if (invites.length === 0) {
-    container.innerHTML = '<div class="empty-state">No hay invitaciones pendientes.</div>';
-    return;
-  }
-  for (const inv of invites) {
-    const row = document.createElement('div');
-    row.className = 'list-row';
-    row.innerHTML = `
-      <div>
-        <p class="list-row-title">${escapeHtml(inv.id)}</p>
-        <p class="list-row-sub">Invitación pendiente</p>
-      </div>
-    `;
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-ghost btn-sm';
-    btn.textContent = 'Cancelar';
-    btn.addEventListener('click', async () => {
-      if (confirm('¿Cancelar esta invitación?')) await deleteDoc(doc(db, 'invites', inv.id));
-    });
-    row.appendChild(btn);
-    container.appendChild(row);
-  }
-}
-
-// Etiqueta y tono del estado de un usuario básico (no se usa para admins
-// locales — a esos solo los gestiona el admin de plataforma).
-const USER_STATUS_LABEL = { blocked: 'Bloqueado', inactive: 'De baja' };
-
-function renderUserList(users) {
-  const container = document.getElementById('userList');
-  container.innerHTML = '';
-  if (users.length === 0) {
-    container.innerHTML = '<div class="empty-state">Todavía no hay nadie en el equipo.</div>';
-    return;
-  }
-  for (const u of users) {
-    const status = u.status || 'active';
-    const row = document.createElement('div');
-    row.className = 'list-row';
-    row.innerHTML = `
-      <div>
-        <p class="list-row-title">${escapeHtml(u.name)}</p>
-        <p class="list-row-sub">${escapeHtml(u.email)}</p>
-      </div>
-    `;
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.alignItems = 'center';
-    actions.style.gap = '10px';
-
-    const pill = document.createElement('span');
-    pill.className = 'pill';
-    pill.textContent = u.role === 'local_admin' ? 'Admin local' : 'Básico';
-    actions.appendChild(pill);
-
-    if (status !== 'active' && USER_STATUS_LABEL[status]) {
-      const statusPill = document.createElement('span');
-      statusPill.className = 'pill pill-warning';
-      statusPill.textContent = USER_STATUS_LABEL[status];
-      actions.appendChild(statusPill);
-    }
-
-    // Un admin local solo puede gestionar (editar nombre, bloquear, dar de
-    // baja) a usuarios BÁSICOS de su salón — a otros admins locales los
-    // gestiona el admin de plataforma (ver firestore.rules). Se ocultan los
-    // controles acá en vez de mostrarlos y que fallen en silencio.
-    if (u.role === 'basic') {
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-ghost btn-sm';
-      editBtn.textContent = 'Editar nombre';
-      editBtn.addEventListener('click', async () => {
-        const newName = prompt('Nuevo nombre para este usuario:', u.name);
-        if (newName === null) return;
-        const trimmed = newName.trim();
-        if (!trimmed || trimmed === u.name) return;
-        await updateUserName(u.id, trimmed);
-      });
-      actions.appendChild(editBtn);
-
-      const blockBtn = document.createElement('button');
-      blockBtn.className = 'btn btn-ghost btn-sm';
-      if (status === 'blocked') {
-        blockBtn.textContent = 'Desbloquear';
-        blockBtn.addEventListener('click', async () => {
-          await setUserStatus(u.id, 'active');
-        });
-      } else {
-        blockBtn.textContent = 'Bloquear';
-        blockBtn.addEventListener('click', async () => {
-          if (confirm(`¿Bloquear a "${u.name}"? No va a poder entrar a la app hasta que lo desbloquees.`)) {
-            await setUserStatus(u.id, 'blocked');
-          }
-        });
-      }
-      actions.appendChild(blockBtn);
-
-      const deactivateBtn = document.createElement('button');
-      deactivateBtn.className = 'btn btn-ghost btn-sm';
-      if (status === 'inactive') {
-        deactivateBtn.textContent = 'Reactivar';
-        deactivateBtn.addEventListener('click', async () => {
-          await setUserStatus(u.id, 'active');
-        });
-      } else {
-        deactivateBtn.textContent = 'Dar de baja';
-        deactivateBtn.addEventListener('click', async () => {
-          if (confirm(`¿Dar de baja a "${u.name}"? Deja de tener acceso a la app. Podés reactivarlo después.`)) {
-            await setUserStatus(u.id, 'inactive');
-          }
-        });
-      }
-      actions.appendChild(deactivateBtn);
-    }
-
-    row.appendChild(actions);
-    container.appendChild(row);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1165,7 +426,7 @@ function renderUserList(users) {
 // el límite y vuelve a suscribirse.
 function subscribeHistory() {
   if (unsubHistory) unsubHistory();
-  unsubHistory = listenCompletedOrders(profile.salonId, renderHistory, historyLimit);
+  unsubHistory = listenCompletedOrders(state.profile.salonId, renderHistory, historyLimit);
 }
 
 function renderHistory(orders) {
@@ -1175,8 +436,8 @@ function renderHistory(orders) {
     container.innerHTML = '<div class="empty-state">Todavía no hay períodos archivados.</div>';
     return;
   }
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
-  const userById = new Map(users.map((u) => [u.id, u]));
+  const categoryById = new Map(state.categories.map((c) => [c.id, c]));
+  const userById = new Map(state.users.map((u) => [u.id, u]));
 
   for (const o of orders) {
     const row = document.createElement('div');
@@ -1185,7 +446,7 @@ function renderHistory(orders) {
     row.innerHTML = `
       <div class="consolidated-row-head">
         <div>
-          <p class="product-name">${escapeHtml(formatPeriod(o))}</p>
+          <p class="product-name">${escapeHtml(formatPeriod(o, { includeYear: true }))}</p>
           <p class="product-meta">Cerrado el ${escapeHtml(closedDate)}</p>
         </div>
         <span class="chevron">▾</span>
@@ -1203,9 +464,9 @@ function renderHistory(orders) {
       loaded = true;
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
-        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(profile.salonId, o.id);
-        const productGroups = consolidateByProduct(histItems, products, categories, histAdjustments);
-        const userGroups = consolidateByUser(histItems, products);
+        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(state.profile.salonId, o.id);
+        const productGroups = consolidateByProduct(histItems, state.products, state.categories, histAdjustments);
+        const userGroups = consolidateByUser(histItems, state.products);
         // La recepción ya no vive en una colección aparte: se deriva sumando
         // receivedQuantity de cada línea (item.breakdown, que ya viene con
         // ese dato desde consolidateByProduct). Mismo formato {receivedQuantity,
@@ -1283,7 +544,7 @@ function renderHistory(orders) {
         detail.appendChild(userSection);
 
         function renderDetailViews() {
-          const ctx = o.receptionFinalized ? null : { salonId: profile.salonId, orderId: o.id, adminUid: user.uid };
+          const ctx = o.receptionFinalized ? null : { salonId: state.profile.salonId, orderId: o.id, adminUid: state.user.uid };
           renderHistProductView(productSection, productGroups, categoryById, userById, ctx);
           renderHistUserView(userSection, userGroups, categoryById, userById, receivedByProduct);
         }
@@ -1315,7 +576,7 @@ function renderHistory(orders) {
               return;
             btn.disabled = true;
             try {
-              await finalizeReception(profile.salonId, o.id, user.uid);
+              await finalizeReception(state.profile.salonId, o.id, state.user.uid);
               o.receptionFinalized = true;
               renderFinalizeControl();
               renderDetailViews();
@@ -1370,20 +631,6 @@ function renderHistory(orders) {
 }
 
 /** Construye una columna label+valor (mismo estilo que el Historial del usuario básico). */
-function buildHistStatEl(label, value, tone = null) {
-  const wrap = document.createElement('section');
-  wrap.className = 'hist-stat';
-  const labelEl = document.createElement('span');
-  labelEl.className = 'hist-stat-label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('span');
-  valueEl.className = `hist-stat-value${tone ? ' hist-stat-' + tone : ''}`;
-  valueEl.textContent = value;
-  wrap.appendChild(labelEl);
-  wrap.appendChild(valueEl);
-  return { wrap, valueEl };
-}
-
 /**
  * Deriva, a partir de item.breakdown[].receivedQuantity (que ya trae cada
  * línea desde consolidateByProduct), un mapa productId -> {receivedQuantity,
@@ -1560,6 +807,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           input.addEventListener('change', () => {
             const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
             if (value === null) return;
+            const previousValue = b.receivedQuantity ?? '';
             // Se guarda el precio ACTUAL del producto como precio "congelado"
             // de esta recepción, para que no cambie si después se edita el
             // precio del producto en el catálogo.
@@ -1578,7 +826,11 @@ function renderHistProductView(container, groups, categoryById, userById = new M
                   recomputeTotals();
                 }
               })
-              .catch(console.error);
+              .catch((err) => {
+                console.error(err);
+                input.value = previousValue;
+                alert('No se pudo guardar lo recibido. Probá de nuevo.');
+              });
           });
         }
         continue; // ya insertamos row arriba, no repetir abajo
@@ -1654,6 +906,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
             input.addEventListener('change', () => {
               const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
               if (value === null) return;
+              const previousValue = b.receivedQuantity ?? '';
               const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
               setItemReceivedQuantity(ctx.salonId, ctx.orderId, b.userId, item.product.id, value, ctx.adminUid, unitPrice)
                 .then(() => {
@@ -1662,7 +915,11 @@ function renderHistProductView(container, groups, categoryById, userById = new M
                   setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
                   refreshAggregate();
                 })
-                .catch(console.error);
+                .catch((err) => {
+                  console.error(err);
+                  input.value = previousValue;
+                  alert('No se pudo guardar lo recibido. Probá de nuevo.');
+                });
             });
           }
         }
@@ -1763,11 +1020,4 @@ function renderHistUserView(container, userGroups, categoryById, userById, recei
 // ---------------------------------------------------------------------------
 // Utilidades
 // ---------------------------------------------------------------------------
-function formatPeriod(o) {
-  if (!o.periodStart || !o.periodEnd) return '';
-  const opts = { day: 'numeric', month: 'short', year: 'numeric' };
-  const start = new Date(o.periodStart + 'T00:00:00').toLocaleDateString('es', opts);
-  const end = new Date(o.periodEnd + 'T00:00:00').toLocaleDateString('es', opts);
-  return `${start} — ${end}`;
-}
 

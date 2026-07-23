@@ -1155,6 +1155,26 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
     return;
   }
+
+  // Total pedido (precio × cantidad pedida) y total recibido (precio ×
+  // cantidad recibida) de TODO el equipo, sumando todos los productos.
+  // Se recalcula cada vez que se edita un campo "Recibido".
+  const costEntries = [];
+  let anyPriceKnown = false;
+  let totalPedidoValueEl = null;
+  let totalRecibidoValueEl = null;
+  function recomputeTotals() {
+    if (!totalPedidoValueEl) return;
+    let totalPedido = 0;
+    let totalRecibido = 0;
+    for (const e of costEntries) {
+      totalPedido += e.pedidoCost;
+      totalRecibido += e.recibidoCost;
+    }
+    totalPedidoValueEl.textContent = formatPrice(totalPedido);
+    totalRecibidoValueEl.textContent = formatPrice(totalRecibido);
+  }
+
   for (const group of groups) {
     const catTitle = document.createElement('p');
     catTitle.className = 'text-sm';
@@ -1204,6 +1224,20 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       diffEl.className = `receipt-diff ${receiptDiffClass(hasReceived, hasReceived ? receivedRaw - item.totalQuantity : 0)}`;
       diffEl.textContent = hasReceived ? (receivedRaw - item.totalQuantity > 0 ? `+${receivedRaw - item.totalQuantity}` : String(receivedRaw - item.totalQuantity)) : '—';
 
+      // Precio "congelado" si ya hay recepción registrada; si no, el precio
+      // actual del producto (mismo criterio que usa el Excel).
+      const knownPrice = hasReceived && typeof received.unitPrice === 'number'
+        ? received.unitPrice
+        : typeof item.product.price === 'number'
+          ? item.product.price
+          : null;
+      if (knownPrice !== null) anyPriceKnown = true;
+      const costEntry = {
+        pedidoCost: knownPrice !== null ? item.totalQuantity * knownPrice : 0,
+        recibidoCost: knownPrice !== null && hasReceived ? receivedRaw * knownPrice : 0,
+      };
+      costEntries.push(costEntry);
+
       if (ctx) {
         input.addEventListener('click', (e) => e.stopPropagation());
         input.addEventListener('change', () => {
@@ -1218,6 +1252,11 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
               const diff = value - item.totalQuantity;
               diffEl.className = `receipt-diff ${receiptDiffClass(true, diff)}`;
               diffEl.textContent = diff > 0 ? `+${diff}` : String(diff);
+              if (unitPrice !== null) {
+                costEntry.pedidoCost = item.totalQuantity * unitPrice;
+                costEntry.recibidoCost = value * unitPrice;
+                recomputeTotals();
+              }
             })
             .catch(console.error);
         });
@@ -1232,6 +1271,37 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       line.appendChild(statsEl);
       container.appendChild(line);
     }
+  }
+
+  if (anyPriceKnown) {
+    // <section>, no <div>: esto se inserta dentro de .consolidated-row-detail,
+    // que le fuerza display:flex a cualquier <div> hijo.
+    const totalWrap = document.createElement('section');
+    totalWrap.className = 'order-total mt-4';
+    totalWrap.style.flexDirection = 'column';
+    totalWrap.style.alignItems = 'stretch';
+    totalWrap.style.gap = '6px';
+
+    const pedidoRow = document.createElement('div');
+    const pedidoLabel = document.createElement('span');
+    pedidoLabel.textContent = 'Total pedido';
+    totalPedidoValueEl = document.createElement('span');
+    totalPedidoValueEl.className = 'order-total-value';
+    pedidoRow.appendChild(pedidoLabel);
+    pedidoRow.appendChild(totalPedidoValueEl);
+
+    const recibidoRow = document.createElement('div');
+    const recibidoLabel = document.createElement('span');
+    recibidoLabel.textContent = 'Total recibido';
+    totalRecibidoValueEl = document.createElement('span');
+    totalRecibidoValueEl.className = 'order-total-value';
+    recibidoRow.appendChild(recibidoLabel);
+    recibidoRow.appendChild(totalRecibidoValueEl);
+
+    totalWrap.appendChild(pedidoRow);
+    totalWrap.appendChild(recibidoRow);
+    container.appendChild(totalWrap);
+    recomputeTotals();
   }
 }
 

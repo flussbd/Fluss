@@ -341,10 +341,14 @@ function renderMyHistory(orders) {
           detail.appendChild(note);
         }
 
-        // Total de "Mi total" (columna final) sumado en todo el período, para
-        // mostrar un resumen al final de la lista.
-        let myPeriodTotal = 0;
+        // Totales del período: lo que pedí (a precio congelado) y una
+        // estimación de lo que me llegó a mí. La recepción se registra por
+        // producto para TODO el equipo, no por persona, así que cuando no
+        // llegó el 100% de un producto, prorrateamos según cuánto pedí yo.
+        let myPeriodTotalPedido = 0;
+        let myPeriodTotalLlegado = 0;
         let myPeriodTotalKnown = false;
+        let anyProportional = false;
 
         for (const { item, product, received, hasReceived, complete } of mineWithStatus) {
           // Ojo: <section>, no <div> — esto se inserta dentro de
@@ -377,9 +381,16 @@ function renderMyHistory(orders) {
           if (typeof received?.unitPrice === 'number') {
             statsEl.appendChild(buildHistStat('Precio', formatPrice(received.unitPrice)));
             const myTotal = item.quantity * received.unitPrice;
-            myPeriodTotal += myTotal;
+            myPeriodTotalPedido += myTotal;
             myPeriodTotalKnown = true;
             statsEl.appendChild(buildHistStat('Mi total', formatPrice(myTotal), complete ? 'ok' : 'warn'));
+
+            if (hasReceived) {
+              const totalRequested = totalRequestedByProduct.get(item.productId) || item.quantity;
+              const portion = totalRequested > 0 ? Math.min(1, received.receivedQuantity / totalRequested) : 0;
+              myPeriodTotalLlegado += item.quantity * portion * received.unitPrice;
+              if (!complete) anyProportional = true;
+            }
           } else {
             statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));
             statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
@@ -390,12 +401,34 @@ function renderMyHistory(orders) {
         }
 
         if (myPeriodTotalKnown) {
-          const totalRow = document.createElement('section');
-          totalRow.className = 'order-total mt-4';
-          totalRow.innerHTML = `<span>Mi total del período</span><span class="order-total-value">${escapeHtml(
-            formatPrice(myPeriodTotal)
+          // <section>, no <div>: ver nota más arriba sobre .consolidated-row-detail.
+          const totalWrap = document.createElement('section');
+          totalWrap.className = 'order-total mt-4';
+          totalWrap.style.flexDirection = 'column';
+          totalWrap.style.alignItems = 'stretch';
+          totalWrap.style.gap = '6px';
+
+          const pedidoRow = document.createElement('div');
+          pedidoRow.innerHTML = `<span>Total pedido</span><span class="order-total-value">${escapeHtml(
+            formatPrice(myPeriodTotalPedido)
           )}</span>`;
-          detail.appendChild(totalRow);
+
+          const llegadoRow = document.createElement('div');
+          llegadoRow.innerHTML = `<span>Total que llegó${anyProportional ? ' (estimado)' : ''}</span><span class="order-total-value">${escapeHtml(
+            formatPrice(myPeriodTotalLlegado)
+          )}</span>`;
+
+          totalWrap.appendChild(pedidoRow);
+          totalWrap.appendChild(llegadoRow);
+          detail.appendChild(totalWrap);
+
+          if (anyProportional) {
+            const estimateNote = document.createElement('p');
+            estimateNote.className = 'text-sm text-muted mt-4';
+            estimateNote.textContent =
+              'La recepción se registra por producto para todo el equipo, no por persona: "Total que llegó" es una estimación proporcional a lo que pediste, no la cantidad exacta de tus unidades que llegaron.';
+            detail.appendChild(estimateNote);
+          }
         }
       } catch (err) {
         console.error(err);

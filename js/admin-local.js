@@ -907,7 +907,10 @@ async function bulkImportCatalog(text) {
       const parts = rawLine.split(';').map((s) => s.trim());
       const [name, brand, productLine, shadeCode, format, supplierName, productCode, priceRaw] = parts;
       if (!name) continue;
-      const price = priceRaw ? Number(priceRaw) : null;
+      // Si pegan un precio inválido o negativo (typo), no lo guardamos tal
+      // cual: lo dejamos en null (negativo) o lo ignoramos (no numérico).
+      const priceParsed = priceRaw ? Number(priceRaw) : null;
+      const price = priceParsed !== null && !Number.isNaN(priceParsed) ? Math.max(0, priceParsed) : null;
       await addProduct(profile.salonId, {
         name,
         categoryId: currentCategoryId,
@@ -917,7 +920,7 @@ async function bulkImportCatalog(text) {
         format: format || '',
         supplierName: supplierName || '',
         productCode: productCode || '',
-        price: price !== null && !Number.isNaN(price) ? price : null,
+        price,
       });
       created.products++;
     }

@@ -1236,22 +1236,28 @@ function renderHistUserView(container, userGroups, categoryById, userById) {
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
     return;
   }
+  // Misma tarjeta con borde que la vista "Por usuario" del pedido actual
+  // (.user-group). Importante: el wrapper va en un <section>, no un <div>,
+  // porque esto se inserta dentro de .consolidated-row-detail y esa regla
+  // le pone display:flex a CUALQUIER <div> hijo (rompía el layout de la tarjeta).
   for (const group of userGroups) {
-    const userTitle = document.createElement('p');
-    userTitle.className = 'text-sm';
-    userTitle.style.fontWeight = '600';
-    userTitle.style.marginTop = '10px';
-    userTitle.textContent = userById.get(group.userId)?.name || group.userName;
-    container.appendChild(userTitle);
+    const wrap = document.createElement('section');
+    wrap.className = 'user-group';
+    const h3 = document.createElement('h3');
+    h3.textContent = userById.get(group.userId)?.name || group.userName;
+    wrap.appendChild(h3);
+    const ul = document.createElement('ul');
     for (const it of group.items) {
-      const line = document.createElement('div');
+      const li = document.createElement('li');
       const noteSuffix = it.notes ? ` — ${it.notes}` : '';
       const label = [categoryById.get(it.product.categoryId)?.name, it.product.brand, it.product.name]
         .filter(Boolean)
         .join(' · ');
-      line.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
-      container.appendChild(line);
+      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
+      ul.appendChild(li);
     }
+    wrap.appendChild(ul);
+    container.appendChild(wrap);
   }
 }
 

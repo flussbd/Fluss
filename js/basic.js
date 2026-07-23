@@ -427,29 +427,16 @@ function renderMyHistory(orders) {
           // <section>, no <div>: ver nota más arriba sobre .consolidated-row-detail.
           const totalWrap = document.createElement('section');
           totalWrap.className = 'order-total mt-4';
-          totalWrap.style.flexDirection = 'column';
-          totalWrap.style.alignItems = 'stretch';
-          totalWrap.style.gap = '6px';
-
-          const pedidoRow = document.createElement('div');
-          pedidoRow.innerHTML = `<span>Total pedido</span><span class="order-total-value">${escapeHtml(
-            formatPrice(myPeriodTotalPedido)
-          )}</span>`;
-
-          const llegadoRow = document.createElement('div');
-          llegadoRow.innerHTML = `<span>Total que llegó${anyPendingCost ? ' (parcial)' : ''}</span><span class="order-total-value">${escapeHtml(
+          totalWrap.innerHTML = `<span>Total${anyPendingCost ? ' (parcial)' : ''}</span><span class="order-total-value">${escapeHtml(
             formatPrice(myPeriodTotalLlegado)
           )}</span>`;
-
-          totalWrap.appendChild(pedidoRow);
-          totalWrap.appendChild(llegadoRow);
           detail.appendChild(totalWrap);
 
           if (anyPendingCost) {
             const pendingNote = document.createElement('p');
             pendingNote.className = 'text-sm text-muted mt-4';
             pendingNote.textContent =
-              'Todavía falta que tu administrador asigne cuánto te llegó de algún producto: ese producto no está incluido en "Total que llegó" por ahora.';
+              'Todavía falta que tu administrador asigne cuánto te llegó de algún producto: ese producto no está incluido en el total por ahora.';
             detail.appendChild(pendingNote);
           }
         }

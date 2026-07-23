@@ -973,18 +973,22 @@ function renderProductList() {
 function buildProductRow(p, categoryById, isInactive) {
   const row = document.createElement('div');
   row.className = 'list-row';
+  // El código de tono se muestra aparte, como una "ficha de color" (chip
+  // monoespaciado) en vez de perderse mezclado con el resto del texto.
   const metaParts = [
     categoryById.get(p.categoryId)?.name || '—',
     p.brand,
     p.line,
-    p.shadeCode,
     p.format,
     p.supplierName,
     formatPrice(p.price),
   ].filter(Boolean);
   row.innerHTML = `
     <div>
-      <p class="list-row-title">${escapeHtml(p.name)}</p>
+      <div class="product-name-row">
+        <p class="list-row-title">${escapeHtml(p.name)}</p>
+        ${p.shadeCode ? `<span class="shade-chip">${escapeHtml(p.shadeCode)}</span>` : ''}
+      </div>
       <p class="list-row-sub">${escapeHtml(metaParts.join(' · '))}</p>
     </div>
   `;

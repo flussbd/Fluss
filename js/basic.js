@@ -501,7 +501,17 @@ function buildProductCard(product, local) {
 
   node.classList.toggle('selected', local.quantity > 0);
   node.querySelector('.product-name').textContent = product.name;
-  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.shadeCode, product.format, product.supplierName]
+  // El código de tono se muestra aparte como chip, no mezclado en el texto
+  // gris — es la referencia rápida que usa un colorista para reconocer el
+  // producto sin leer el nombre completo.
+  const shadeChipEl = node.querySelector('.shade-chip');
+  if (product.shadeCode) {
+    shadeChipEl.textContent = product.shadeCode;
+    shadeChipEl.classList.remove('hidden');
+  } else {
+    shadeChipEl.classList.add('hidden');
+  }
+  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.format, product.supplierName]
     .filter(Boolean)
     .join(' · ');
   const priceEl = node.querySelector('.product-price');

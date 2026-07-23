@@ -12,6 +12,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
@@ -125,9 +126,16 @@ export function listenAdjustments(salonId, orderId, cb) {
   );
 }
 
-export function listenCompletedOrders(salonId, cb) {
+/**
+ * Períodos archivados, del más nuevo al más viejo. Paginado con `limit`
+ * (por defecto los últimos 10): sin esto, cada apertura del Historial leía
+ * TODOS los períodos que existan para siempre, y ese costo solo crece con
+ * el tiempo. Llamar de nuevo con un `maxResults` más grande (re-suscribiendo)
+ * para "cargar más".
+ */
+export function listenCompletedOrders(salonId, cb, maxResults = 10) {
   return onSnapshot(
-    query(ordersCol(salonId), where('status', '==', 'completed'), orderBy('closedAt', 'desc')),
+    query(ordersCol(salonId), where('status', '==', 'completed'), orderBy('closedAt', 'desc'), limit(maxResults)),
     (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 }

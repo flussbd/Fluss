@@ -55,6 +55,8 @@ let activeBrand = 'all';
 let activeView = 'catalog';
 let itemsUnsub = null;
 let submissionUnsub = null;
+let historyUnsub = null;
+let historyLimit = 10;
 
 let user, profile;
 
@@ -103,9 +105,7 @@ async function init() {
     allProducts = prods;
   });
 
-  listenCompletedOrders(profile.salonId, (orders) => {
-    renderMyHistory(orders);
-  });
+  subscribeHistory();
 
   listenCurrentOrder(profile.salonId, (currentOrder) => {
     order = currentOrder;
@@ -260,6 +260,14 @@ function explainSubmitError(err) {
 // ---------------------------------------------------------------------------
 // Historial: pedidos de períodos ya archivados, filtrado a lo que pedí yo.
 // ---------------------------------------------------------------------------
+// Paginado: solo se leen los últimos `historyLimit` períodos (no el
+// historial completo del salón cada vez que se abre esta pestaña).
+// "Cargar más" agranda el límite y vuelve a suscribirse.
+function subscribeHistory() {
+  if (historyUnsub) historyUnsub();
+  historyUnsub = listenCompletedOrders(profile.salonId, renderMyHistory, historyLimit);
+}
+
 function renderMyHistory(orders) {
   myHistoryListEl.innerHTML = '';
   emptyMyHistoryEl.classList.toggle('hidden', orders.length > 0);
@@ -447,6 +455,19 @@ function renderMyHistory(orders) {
     });
 
     myHistoryListEl.appendChild(row);
+  }
+
+  // Solo aparece si puede haber más períodos viejos sin cargar.
+  if (orders.length >= historyLimit) {
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'btn btn-secondary btn-sm mt-4';
+    moreBtn.textContent = 'Cargar más períodos';
+    moreBtn.addEventListener('click', () => {
+      historyLimit += 10;
+      subscribeHistory();
+    });
+    myHistoryListEl.appendChild(moreBtn);
   }
 }
 

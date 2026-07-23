@@ -48,6 +48,8 @@ let providerExportContext = null;
 let consolidatedView = 'byProduct'; // 'byProduct' | 'byUser'
 let unsubItems = null;
 let unsubAdjustments = null;
+let unsubHistory = null;
+let historyLimit = 10;
 
 init();
 
@@ -103,7 +105,7 @@ async function init() {
     maybeAutoCloseDraft();
   });
 
-  listenCompletedOrders(profile.salonId, renderHistory);
+  subscribeHistory();
   listenUsersOfSalon(profile.salonId, (list) => {
     users = list;
     renderUserList(list);
@@ -1103,6 +1105,14 @@ function renderUserList(users) {
 // ---------------------------------------------------------------------------
 // Historial
 // ---------------------------------------------------------------------------
+// Paginado: solo se leen los últimos `historyLimit` períodos (no todo el
+// historial completo cada vez que se abre el panel). "Cargar más" agranda
+// el límite y vuelve a suscribirse.
+function subscribeHistory() {
+  if (unsubHistory) unsubHistory();
+  unsubHistory = listenCompletedOrders(profile.salonId, renderHistory, historyLimit);
+}
+
 function renderHistory(orders) {
   const container = document.getElementById('historyList');
   container.innerHTML = '';
@@ -1290,6 +1300,20 @@ function renderHistory(orders) {
     });
 
     container.appendChild(row);
+  }
+
+  // Solo aparece si puede haber más períodos viejos sin cargar (llegamos
+  // justo al límite pedido); si no, no tiene sentido mostrarlo.
+  if (orders.length >= historyLimit) {
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'btn btn-secondary btn-sm mt-4';
+    moreBtn.textContent = 'Cargar más períodos';
+    moreBtn.addEventListener('click', () => {
+      historyLimit += 10;
+      subscribeHistory();
+    });
+    container.appendChild(moreBtn);
   }
 }
 

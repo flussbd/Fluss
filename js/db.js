@@ -206,6 +206,20 @@ export function reopenDraft(salonId, orderId) {
   return updateDoc(orderRef(salonId, orderId), { status: 'draft' });
 }
 
+/**
+ * Cierra el "lazo": una vez que el admin revisó que la recepción de este
+ * período está bien, la marca como finalizada. Desde ahí las cantidades
+ * recibidas y las asignaciones por usuario quedan de solo lectura, para que
+ * no se sigan editando después de haber cerrado el tema con el proveedor.
+ */
+export function finalizeReception(salonId, orderId, adminUid) {
+  return updateDoc(orderRef(salonId, orderId), {
+    receptionFinalized: true,
+    receptionFinalizedAt: serverTimestamp(),
+    receptionFinalizedBy: adminUid,
+  });
+}
+
 export function closeOrder(salonId, orderId, adminUid) {
   return updateDoc(orderRef(salonId, orderId), {
     status: 'completed',

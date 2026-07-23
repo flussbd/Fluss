@@ -12,6 +12,7 @@ import {
   createOrder,
   startReview,
   reopenDraft,
+  finalizeReception,
   closeOrder,
   setAdjustment,
   addCategory,
@@ -1206,18 +1207,67 @@ function renderHistory(orders) {
         topBar.appendChild(downloadWrap);
         detail.appendChild(topBar);
 
+        // "Lazo cerrado": una vez que el admin confirma que revisó la
+        // recepción, la finaliza y los campos quedan de solo lectura (no
+        // se puede seguir editando cantidades recibidas ni asignaciones).
+        const finalizeWrap = document.createElement('section');
+        finalizeWrap.className = 'mt-4';
+        detail.appendChild(finalizeWrap);
+
         const productSection = document.createElement('section');
         const userSection = document.createElement('section');
         userSection.classList.add('hidden');
         detail.appendChild(productSection);
         detail.appendChild(userSection);
 
-        renderHistProductView(productSection, productGroups, categoryById, receivedByProduct, {
-          salonId: profile.salonId,
-          orderId: o.id,
-          adminUid: user.uid,
-        });
-        renderHistUserView(userSection, userGroups, categoryById, userById);
+        function renderDetailViews() {
+          const ctx = o.receptionFinalized ? null : { salonId: profile.salonId, orderId: o.id, adminUid: user.uid };
+          renderHistProductView(productSection, productGroups, categoryById, receivedByProduct, ctx);
+          renderHistUserView(userSection, userGroups, categoryById, userById, receivedByProduct);
+        }
+
+        function renderFinalizeControl() {
+          finalizeWrap.innerHTML = '';
+          if (histReceived.length === 0 && !o.receptionFinalized) return; // nada que finalizar todavía
+          if (o.receptionFinalized) {
+            const badge = document.createElement('p');
+            badge.className = 'text-sm status-line-ok';
+            const finalizedDate = o.receptionFinalizedAt?.toDate
+              ? ` el ${o.receptionFinalizedAt.toDate().toLocaleDateString('es')}`
+              : '';
+            badge.textContent = `✓ Recepción finalizada${finalizedDate}. Ya no se puede modificar.`;
+            finalizeWrap.appendChild(badge);
+            return;
+          }
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-accent btn-sm';
+          btn.textContent = 'Finalizar recepción';
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (
+              !confirm(
+                '¿Marcar la recepción de este período como finalizada? Ya no se van a poder editar las cantidades recibidas ni las asignaciones por usuario.'
+              )
+            )
+              return;
+            btn.disabled = true;
+            try {
+              await finalizeReception(profile.salonId, o.id, user.uid);
+              o.receptionFinalized = true;
+              renderFinalizeControl();
+              renderDetailViews();
+            } catch (err) {
+              console.error(err);
+              alert('No se pudo finalizar la recepción. Probá de nuevo.');
+              btn.disabled = false;
+            }
+          });
+          finalizeWrap.appendChild(btn);
+        }
+
+        renderFinalizeControl();
+        renderDetailViews();
 
         btnTotal.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1333,6 +1383,9 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
           ? item.product.price
           : null;
       if (knownPrice !== null) anyPriceKnown = true;
+      const precioEl = document.createElement('span');
+      precioEl.className = 'receipt-pedido';
+      precioEl.textContent = knownPrice !== null ? `Precio: ${formatPrice(knownPrice)}` : 'Precio: —';
       const costEntry = {
         pedidoCost: knownPrice !== null ? item.totalQuantity * knownPrice : 0,
         recibidoCost: knownPrice !== null && hasReceived ? receivedRaw * knownPrice : 0,
@@ -1364,6 +1417,7 @@ function renderHistProductView(container, groups, categoryById, receivedByProduc
       }
 
       statsEl.appendChild(pedidoEl);
+      statsEl.appendChild(precioEl);
       statsEl.appendChild(recibidoLabelEl);
       statsEl.appendChild(input);
       statsEl.appendChild(diffLabelEl);
@@ -1506,7 +1560,7 @@ function buildAllocationPanel(item, received, ctx) {
   return wrap;
 }
 
-function renderHistUserView(container, userGroups, categoryById, userById) {
+function renderHistUserView(container, userGroups, categoryById, userById, receivedByProduct = new Map()) {
   container.innerHTML = '';
   if (userGroups.length === 0) {
     container.innerHTML = '<p class="text-sm text-muted">Nadie agregó insumos en este período.</p>';
@@ -1523,16 +1577,41 @@ function renderHistUserView(container, userGroups, categoryById, userById) {
     h3.textContent = userById.get(group.userId)?.name || group.userName;
     wrap.appendChild(h3);
     const ul = document.createElement('ul');
+    let userTotal = 0;
+    let anyPriceKnown = false;
     for (const it of group.items) {
       const li = document.createElement('li');
       const noteSuffix = it.notes ? ` — ${it.notes}` : '';
       const label = [categoryById.get(it.product.categoryId)?.name, it.product.brand, it.product.name]
         .filter(Boolean)
         .join(' · ');
-      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${it.quantity} unidades</span>`;
+      // Precio congelado al momento de la recepción si ya se registró; si
+      // no, el precio actual del producto (mismo criterio que el resto).
+      const received = receivedByProduct.get(it.product.id);
+      const price = typeof received?.unitPrice === 'number'
+        ? received.unitPrice
+        : typeof it.product.price === 'number'
+          ? it.product.price
+          : null;
+      const qtyText = price !== null ? `${it.quantity} unidades · ${formatPrice(price)} c/u` : `${it.quantity} unidades`;
+      if (price !== null) {
+        userTotal += it.quantity * price;
+        anyPriceKnown = true;
+      }
+      li.innerHTML = `<span>${escapeHtml(label)}${escapeHtml(noteSuffix)}</span><span>${escapeHtml(qtyText)}</span>`;
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
+
+    if (anyPriceKnown) {
+      // <section>, no <div>: conserva el padding/borde de .order-total
+      // (un <div> acá quedaría aplastado por la regla de .consolidated-row-detail).
+      const totalRow = document.createElement('section');
+      totalRow.className = 'order-total mt-4';
+      totalRow.innerHTML = `<span>Total</span><span class="order-total-value">${escapeHtml(formatPrice(userTotal))}</span>`;
+      wrap.appendChild(totalRow);
+    }
+
     container.appendChild(wrap);
   }
 }

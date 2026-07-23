@@ -679,27 +679,36 @@ h1, h2, h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Recepción: pedido vs. recibido (Historial, admin) ---------- */
+/* ---------- Recepción: pedido vs. recibido (Historial, admin) ----------
+   El nombre va SIEMPRE arriba y las estadísticas (Pedido/Recibido/input/
+   Diferencia) debajo, en su propia línea: con nombre y stats en la misma
+   fila (como antes) un nombre largo se achicaba tanto que el texto se
+   partía palabra por palabra y los stats quedaban centrados verticalmente
+   encima, superpuestos. */
 .consolidated-row-detail .receipt-line {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 0;
   font-size: 14px;
   color: var(--neutral-text);
+  border-bottom: 1px solid var(--border);
+}
+
+.consolidated-row-detail .receipt-line:last-child {
+  border-bottom: none;
 }
 
 .receipt-name {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
 }
 
 .receipt-stats {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
 }
 
 .receipt-pedido {

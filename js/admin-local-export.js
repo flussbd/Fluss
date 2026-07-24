@@ -131,6 +131,24 @@ function buildProductSheetRows(flatItems, receivedByProduct) {
 }
 
 /**
+ * Filas del archivo "por proveedor": a diferencia de `buildProductSheetRows`
+ * (que se usa en la hoja "Total" general, con precio/recibido/diferencia),
+ * esta versión trae solo lo que hace falta para pasarle el pedido al
+ * proveedor — sin su propia columna (ya está scopeado a uno por hoja).
+ */
+function buildProviderSheetRows(flatItems) {
+  const header = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad'];
+  const rows = [header];
+  let totalQty = 0;
+  for (const { product, categoryName, totalQuantity } of flatItems) {
+    totalQty += totalQuantity;
+    rows.push([product.brand || '', categoryName, product.line || '', product.name, product.shadeCode || '', product.format || '', totalQuantity]);
+  }
+  rows.push(['', '', '', '', '', 'TOTAL', totalQty]);
+  return rows;
+}
+
+/**
  * Crea la hoja a partir de las filas: les da a las columnas indicadas en
  * `numericCols` (0-based) formato numérico sin decimales y con separador de
  * miles, y ajusta el ancho de todas las columnas al contenido.
@@ -283,8 +301,9 @@ export function downloadOrderXlsxByProvider(
   const wb = XLSX.utils.book_new();
   const usedNames = new Set();
   for (const providerName of providerNames) {
-    const rows = buildProductSheetRows(byProvider.get(providerName), receivedByProduct);
-    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName(providerName, usedNames));
+    const rows = buildProviderSheetRows(byProvider.get(providerName));
+    // Columna numérica: Cantidad (índice 6, 0-based).
+    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6]), sanitizeSheetName(providerName, usedNames));
   }
   const suffix = onlyProvider ? `-${onlyProvider.replace(/[\\/:*?"<>|]/g, ' ').trim()}` : '';
   XLSX.writeFile(wb, `pedido-por-proveedor${suffix}-${o.periodStart}-a-${o.periodEnd}.xlsx`);

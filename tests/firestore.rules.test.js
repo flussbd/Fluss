@@ -317,6 +317,100 @@ describe('recepción (receivedQuantity guardado directo en items/{itemId})', () 
   });
 });
 
+describe('candado de recepción a nivel de reglas (no solo UI)', () => {
+  it('el local_admin NO puede modificar receivedQuantity de una línea que ya lo tenía guardado', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+        receivedUnitPrice: 4500,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 999 })
+    );
+    // Sigue pudiendo tocar otros campos del mismo doc (ej. la cantidad pedida).
+    await assertSucceeds(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { quantity: 6 })
+    );
+  });
+
+  it('el local_admin SÍ puede guardar receivedQuantity la primera vez (todavía no estaba guardado)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        receivedQuantity: 5,
+        receivedUnitPrice: 4500,
+        receivedUpdatedBy: 'adminA',
+      })
+    );
+  });
+
+  it('el local_admin NO puede borrar una línea que ya tiene receivedQuantity guardado', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(deleteDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
+  });
+
+  it('con el período "recepción finalizada", el local_admin no puede cargar ni una línea que nunca se había guardado', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'completed', receptionFinalized: true });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 5 })
+    );
+    // Pero sigue pudiendo leer y tocar campos no relacionados con recepción.
+    await assertSucceeds(getDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
+  });
+
+  it('el admin de plataforma puede corregir receivedQuantity aunque ya esté guardado (soporte)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+      });
+    });
+    const db = ctxFor('plat1').firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 4 })
+    );
+  });
+});
+
 describe('status de usuario (blocked/inactive)', () => {
   it('un usuario básico bloqueado no puede leer nada, ni siquiera de su propio salón', async () => {
     await seed(async (db) => {

@@ -117,6 +117,21 @@ service cloud.firestore {
             .hasAny(['receivedQuantity', 'receivedUnitPrice', 'receivedUpdatedBy', 'receivedUpdatedAt']);
     }
 
+    // La UI (admin-local.js) bloquea el campo "Recibido" de una línea apenas
+    // se guarda (botón "Guardar"), y bloquea TODO una vez que el admin marca
+    // el período como "recepción finalizada" (finalizeReception) — pero
+    // hasta ahora eso era solo de interfaz: nada impedía sobrescribirlo con
+    // una llamada directa a la API. Esta función hace ese candado real:
+    //   a) esta línea puntual ya tiene un receivedQuantity guardado, o
+    //   b) el pedido entero ya está con receptionFinalized == true
+    // En cualquiera de los dos casos, los campos de recepción quedan
+    // inmutables para el admin local (el admin de plataforma sigue sin
+    // restricción, por si hace falta corregir algo como soporte).
+    function receivedFieldsLocked(salonId, orderId) {
+      return (resource != null && resource.data.get('receivedQuantity', null) != null)
+        || get(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)).data.get('receptionFinalized', false) == true;
+    }
+
     // Mismo patrón que receivedFieldsUntouched(), para el campo "active" de
     // un salón: un admin local puede editar SU salón (ej. el nombre), pero
     // nunca ese campo puntual.
@@ -216,10 +231,10 @@ service cloud.firestore {
         // ---------- order items (uno por usuario+producto, id = `${uid}_${productId}`) ----------
         // Los mismos docs también guardan, más adelante, cuánto le llegó a
         // esa persona de ese producto (receivedQuantity/receivedUnitPrice,
-        // cargado por el admin — ver setItemReceivedQuantity en db.js). No
-        // hace falta una regla aparte: la de abajo ya cubre "el admin puede
-        // escribir este doc en cualquier momento", sea para el pedido o para
-        // la recepción.
+        // cargado por el admin — ver setItemReceivedQuantity en db.js). El
+        // admin puede escribir este doc en cualquier momento para el pedido
+        // en sí, pero los campos de recepción quedan bloqueados una vez
+        // guardados o con el período finalizado — ver receivedFieldsLocked().
         match /items/{itemId} {
           allow read: if isMemberOf(salonId) || isPlatformAdmin();
 
@@ -230,7 +245,9 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)).data.status == 'draft'
               && !exists(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)/submissions/$(request.auth.uid))
               && receivedFieldsUntouched())
-            || (isLocalAdminOf(salonId) && salonIsActive(salonId))
+            || (isLocalAdminOf(salonId)
+              && salonIsActive(salonId)
+              && (!receivedFieldsLocked(salonId, orderId) || receivedFieldsUntouched()))
             || isPlatformAdmin()
           );
 
@@ -240,7 +257,9 @@ service cloud.firestore {
               && resource.data.userId == request.auth.uid
               && get(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)).data.status == 'draft'
               && !exists(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)/submissions/$(request.auth.uid)))
-            || (isLocalAdminOf(salonId) && salonIsActive(salonId))
+            || (isLocalAdminOf(salonId)
+              && salonIsActive(salonId)
+              && !receivedFieldsLocked(salonId, orderId))
             || isPlatformAdmin()
           );
         }

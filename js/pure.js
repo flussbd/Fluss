@@ -132,3 +132,35 @@ export function formatDateTime(date) {
   if (!date) return '—';
   return date.toLocaleString('es', { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
+/** 'YYYY-MM-DD' de una fecha en horario LOCAL (no UTC — evita el corrimiento de un día que da toISOString()). */
+function toLocalDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Sugiere las fechas del próximo período cuando se cierra uno: arranca hoy
+ * y dura lo mismo (en días) que el que se acaba de cerrar — si no hay
+ * período previo o sus fechas no sirven para calcular la duración, usa 14
+ * días (quincena) por defecto. La hora de cierre se copia del anterior.
+ * Solo SUGIERE — el admin siempre confirma/ajusta antes de que se cree.
+ */
+export function suggestNextPeriod(previousOrder, today = new Date()) {
+  let days = 14;
+  if (previousOrder?.periodStart && previousOrder?.periodEnd) {
+    const start = new Date(previousOrder.periodStart + 'T00:00:00');
+    const end = new Date(previousOrder.periodEnd + 'T00:00:00');
+    const diff = Math.round((end - start) / 86400000);
+    if (diff > 0) days = diff;
+  }
+  const endDate = new Date(today);
+  endDate.setDate(endDate.getDate() + days);
+  return {
+    start: toLocalDateStr(today),
+    end: toLocalDateStr(endDate),
+    endTime: previousOrder?.periodEndTime || '10:00',
+  };
+}

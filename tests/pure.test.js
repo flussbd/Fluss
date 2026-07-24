@@ -8,6 +8,7 @@ import {
   receiptDiffClass,
   formatPeriod,
   formatDateTime,
+  suggestNextPeriod,
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
@@ -105,6 +106,27 @@ describe('formatDateTime', () => {
   it('devuelve "—" si no hay fecha', () => {
     expect(formatDateTime(null)).toBe('—');
     expect(formatDateTime(undefined)).toBe('—');
+  });
+});
+
+describe('suggestNextPeriod', () => {
+  const today = new Date(2026, 6, 24); // 24 jul 2026
+
+  it('arranca hoy y dura lo mismo (en días) que el período anterior', () => {
+    const previous = { periodStart: '2026-07-01', periodEnd: '2026-07-15', periodEndTime: '11:30' }; // 14 días
+    const result = suggestNextPeriod(previous, today);
+    expect(result).toEqual({ start: '2026-07-24', end: '2026-08-07', endTime: '11:30' });
+  });
+
+  it('usa 14 días y hora 10:00 por defecto si no hay período anterior', () => {
+    const result = suggestNextPeriod(null, today);
+    expect(result).toEqual({ start: '2026-07-24', end: '2026-08-07', endTime: '10:00' });
+  });
+
+  it('ignora una duración inválida (end antes que start) y usa el default de 14 días', () => {
+    const previous = { periodStart: '2026-07-15', periodEnd: '2026-07-01' };
+    const result = suggestNextPeriod(previous, today);
+    expect(result.end).toBe('2026-08-07');
   });
 });
 

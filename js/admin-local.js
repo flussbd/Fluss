@@ -20,7 +20,7 @@ import {
   consolidateByProduct,
   consolidateByUser,
 } from './db.js';
-import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod, formatDateTime } from './pure.js';
+import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod, formatDateTime, suggestNextPeriod } from './pure.js';
 import { buildHistStatEl } from './ui.js';
 import { state } from './admin-local-state.js';
 import { setupCatalog, renderCategoryOptions, renderProductList } from './admin-local-catalog.js';
@@ -319,7 +319,7 @@ function renderByUserView(userGroups) {
 function setupPeriodModal() {
   const modal = document.getElementById('periodModal');
   document.getElementById('openOrderBtn').addEventListener('click', () => {
-    modal.hidden = false;
+    openPeriodModal();
   });
   document.getElementById('periodCancelBtn').addEventListener('click', () => {
     modal.hidden = true;
@@ -336,9 +336,31 @@ function setupPeriodModal() {
       alert('La fecha "Hasta" no puede ser anterior a "Desde".');
       return;
     }
-    await createOrder(state.profile.salonId, start, end, endTime);
-    modal.hidden = true;
+    try {
+      await createOrder(state.profile.salonId, start, end, endTime);
+      modal.hidden = true;
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo abrir el período. Probá de nuevo.');
+    }
   });
+}
+
+/**
+ * Abre el modal de "nuevo período". Con `prefill` (usado al cerrar un
+ * período: ver handleCloseFortnight) carga fechas SUGERIDAS — el admin
+ * igual tiene que revisarlas y confirmar, no se crea nada solo.
+ */
+function openPeriodModal(prefill = null) {
+  document.getElementById('periodModalHint').textContent = prefill
+    ? 'Sugerimos estas fechas (mismo largo que el período que acabás de cerrar) — revisalas y confirmá, o cambialas.'
+    : 'Definí el rango de fechas para este pedido.';
+  if (prefill) {
+    document.getElementById('periodStartInput').value = prefill.start;
+    document.getElementById('periodEndInput').value = prefill.end;
+    document.getElementById('periodEndTimeInput').value = prefill.endTime;
+  }
+  document.getElementById('periodModal').hidden = false;
 }
 
 // Cierre automático del período de solicitud: como Fluss no tiene servidor
@@ -414,9 +436,19 @@ function formatCountdown(ms) {
 
 async function handleCloseFortnight() {
   if (!confirm('¿Cerrar este período y archivarlo? Esta acción no se puede deshacer.')) return;
-  await closeOrder(state.profile.salonId, state.order.id, state.user.uid);
-  // El admin define las fechas del próximo pedido explícitamente desde
-  // "No hay un pedido abierto" → no se abre uno automático.
+  const justClosed = state.order;
+  try {
+    await closeOrder(state.profile.salonId, justClosed.id, state.user.uid);
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo cerrar el período. Probá de nuevo.');
+    return;
+  }
+  // Como solo puede haber un período abierto a la vez, apenas se cierra
+  // este le sugerimos al admin las fechas del próximo (arranca hoy, dura
+  // lo mismo que el que acaba de cerrar) — pero tiene que confirmarlas
+  // (o cambiarlas) él mismo: no se abre nada solo, sin que lo revise.
+  openPeriodModal(suggestNextPeriod(justClosed));
 }
 
 // ---------------------------------------------------------------------------

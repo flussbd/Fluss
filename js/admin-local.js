@@ -91,11 +91,21 @@ async function init() {
     maybeAutoCloseDraft();
   });
 
-  subscribeHistory();
+  // El Historial muestra "Cerrado el ... por <nombre>" buscando el nombre en
+  // state.users — si arrancara el Historial ANTES de que llegue el primer
+  // snapshot de usuarios, esa búsqueda fallaría (mostraría "alguien") de
+  // pura carrera entre dos listeners async, sin que nada la corrija después
+  // (renderHistory no se vuelve a llamar solo cuando cambian los usuarios).
+  // Por eso subscribeHistory() espera a que llegue el primer snapshot.
+  let historyStarted = false;
   listenUsersOfSalon(state.profile.salonId, (list) => {
     state.users = list;
     renderUserList(list);
     renderDashboard();
+    if (!historyStarted) {
+      historyStarted = true;
+      subscribeHistory();
+    }
   });
   listenInvitesOfSalon(state.profile.salonId, renderInviteList);
 }

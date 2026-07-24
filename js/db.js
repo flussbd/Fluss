@@ -125,6 +125,16 @@ export function listenAdjustments(salonId, orderId, cb) {
 }
 
 /**
+ * Versión "en vivo" de getOrderSubmittedUserIds: mientras el período está
+ * abierto (draft/reviewing), el panel del admin necesita saber en tiempo
+ * real quién ya cerró su propio pedido, para no mostrarle a nadie los
+ * insumos de alguien que todavía no confirmó los suyos.
+ */
+export function listenOrderSubmissions(salonId, orderId, cb) {
+  return onSnapshot(submissionsCol(salonId, orderId), (snap) => cb(snap.docs.map((d) => d.id)));
+}
+
+/**
  * Períodos archivados, del más nuevo al más viejo. Paginado con `limit`
  * (por defecto los últimos 10): sin esto, cada apertura del Historial leía
  * TODOS los períodos que existan para siempre, y ese costo solo crece con

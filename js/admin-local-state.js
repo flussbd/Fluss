@@ -14,4 +14,5 @@ export const state = {
   order: null,
   items: [],
   adjustments: [],
+  submittedUserIds: [], // uids que ya cerraron su propio pedido en el período actual (ver submissions/{uid})
 };

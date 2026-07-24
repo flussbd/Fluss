@@ -5,6 +5,7 @@ import {
   listenCurrentOrder,
   listenOrderItems,
   listenAdjustments,
+  listenOrderSubmissions,
   getOrderDetail,
   getOrderSubmittedUserIds,
   listenCompletedOrders,
@@ -43,6 +44,7 @@ const STATUS_LABEL = {
 let consolidatedView = 'byProduct'; // 'byProduct' | 'byUser'
 let unsubItems = null;
 let unsubAdjustments = null;
+let unsubSubmissions = null;
 let unsubHistory = null;
 let historyLimit = 10;
 
@@ -83,8 +85,10 @@ async function init() {
     state.order = currentOrder;
     if (unsubItems) unsubItems();
     if (unsubAdjustments) unsubAdjustments();
+    if (unsubSubmissions) unsubSubmissions();
     state.items = [];
     state.adjustments = [];
+    state.submittedUserIds = [];
     if (state.order) {
       unsubItems = listenOrderItems(state.profile.salonId, state.order.id, (its) => {
         state.items = its;
@@ -92,6 +96,13 @@ async function init() {
       });
       unsubAdjustments = listenAdjustments(state.profile.salonId, state.order.id, (adjs) => {
         state.adjustments = adjs;
+        renderDashboard();
+      });
+      // Igual que en el Historial (ver renderHistory): mientras alguien no
+      // cierre su propio pedido, sus líneas no cuentan acá tampoco — ni en
+      // el consolidado en vivo ni en las estadísticas.
+      unsubSubmissions = listenOrderSubmissions(state.profile.salonId, state.order.id, (uids) => {
+        state.submittedUserIds = uids;
         renderDashboard();
       });
     }
@@ -135,7 +146,10 @@ function renderDashboard() {
 
   renderActionsBar();
 
-  if (!state.order) return;
+  if (!state.order) {
+    updatePendingSubmissionsHint(0);
+    return;
+  }
 
   document.getElementById('periodLabel').textContent =
     formatPeriod(state.order, { includeYear: true }) +
@@ -145,16 +159,40 @@ function renderDashboard() {
   badge.className = `badge badge-${state.order.status}`;
   updateAutoCloseCountdown();
 
-  const groups = consolidateByProduct(state.items, state.products, state.categories, state.adjustments);
+  // Igual que en el Historial: hasta que alguien no cierre su propio pedido
+  // (submissions/{uid}), lo que tenga cargado en el carrito no se le
+  // muestra al admin — ni acá en el consolidado en vivo, ni en las
+  // estadísticas de arriba.
+  const submittedSet = new Set(state.submittedUserIds);
+  const visibleItems = state.items.filter((i) => submittedSet.has(i.userId));
+  const pendingCount = new Set(state.items.filter((i) => !submittedSet.has(i.userId)).map((i) => i.userId)).size;
+  updatePendingSubmissionsHint(pendingCount);
+
+  const groups = consolidateByProduct(visibleItems, state.products, state.categories, state.adjustments);
   const totalProducts = groups.reduce((s, g) => s + g.items.length, 0);
   const totalUnits = groups.reduce((s, g) => s + g.items.reduce((s2, i) => s2 + i.totalQuantity, 0), 0);
-  const totalUsers = new Set(state.items.map((i) => i.userId)).size;
+  const totalUsers = new Set(visibleItems.map((i) => i.userId)).size;
   document.getElementById('statProducts').textContent = String(totalProducts);
   document.getElementById('statUnits').textContent = String(totalUnits);
   document.getElementById('statUsers').textContent = String(totalUsers);
 
   renderByProductView(groups);
-  renderByUserView(consolidateByUser(state.items, state.products));
+  renderByUserView(consolidateByUser(visibleItems, state.products));
+}
+
+/** Aviso de cuánta gente agregó insumos pero todavía no cerró su propio pedido (por eso no se ve arriba). */
+function updatePendingSubmissionsHint(pendingCount) {
+  const el = document.getElementById('pendingSubmissionsHint');
+  if (!el) return;
+  if (!state.order || pendingCount === 0) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.textContent =
+    pendingCount === 1
+      ? 'Hay 1 persona que agregó insumos pero todavía no cerró su pedido — sus insumos no se muestran acá hasta que lo cierre.'
+      : `Hay ${pendingCount} personas que agregaron insumos pero todavía no cerraron su pedido — sus insumos no se muestran acá hasta que lo cierren.`;
 }
 
 function renderActionsBar() {

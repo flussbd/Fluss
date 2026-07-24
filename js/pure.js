@@ -121,3 +121,14 @@ export function formatPeriod(order, { includeYear = false } = {}) {
   const end = new Date(order.periodEnd + 'T00:00:00').toLocaleDateString('es', opts);
   return `${start} — ${end}`;
 }
+
+/**
+ * Formatea fecha + hora en formato local corto (ej. "24/7/2026, 10:00").
+ * Recibe un `Date` ya convertido — quien llama hace `.toDate()` sobre el
+ * Timestamp de Firestore antes, para que esta función siga sin tocar
+ * Firebase. `null`/`undefined` da '—' (ej. un pedido que todavía no cerró).
+ */
+export function formatDateTime(date) {
+  if (!date) return '—';
+  return date.toLocaleString('es', { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}

@@ -13,7 +13,7 @@ import {
   setMyItem,
   compareProductsByShade,
 } from './db.js';
-import { formatPrice, escapeHtml, formatPeriod } from './pure.js';
+import { formatPrice, escapeHtml, formatPeriod, formatDateTime } from './pure.js';
 import { buildHistStatEl } from './ui.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
@@ -275,7 +275,7 @@ function renderMyHistory(orders) {
   for (const o of orders) {
     const row = document.createElement('div');
     row.className = 'consolidated-row';
-    const closedDate = o.closedAt?.toDate ? o.closedAt.toDate().toLocaleDateString('es') : '—';
+    const closedDate = formatDateTime(o.closedAt?.toDate ? o.closedAt.toDate() : null);
     row.innerHTML = `
       <div class="consolidated-row-head">
         <div>
@@ -484,17 +484,7 @@ function buildProductCard(product, local) {
 
   node.classList.toggle('selected', local.quantity > 0);
   node.querySelector('.product-name').textContent = product.name;
-  // El código de tono se muestra aparte como chip, no mezclado en el texto
-  // gris — es la referencia rápida que usa un colorista para reconocer el
-  // producto sin leer el nombre completo.
-  const shadeChipEl = node.querySelector('.shade-chip');
-  if (product.shadeCode) {
-    shadeChipEl.textContent = product.shadeCode;
-    shadeChipEl.classList.remove('hidden');
-  } else {
-    shadeChipEl.classList.add('hidden');
-  }
-  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.format]
+  node.querySelector('.product-meta').textContent = [product.brand, product.line, product.shadeCode, product.format]
     .filter(Boolean)
     .join(' · ');
   const priceEl = node.querySelector('.product-price');

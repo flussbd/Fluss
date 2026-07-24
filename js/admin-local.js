@@ -6,6 +6,7 @@ import {
   listenOrderItems,
   listenAdjustments,
   getOrderDetail,
+  getOrderSubmittedUserIds,
   listenCompletedOrders,
   listenUsersOfSalon,
   listenInvitesOfSalon,
@@ -19,7 +20,7 @@ import {
   consolidateByProduct,
   consolidateByUser,
 } from './db.js';
-import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod } from './pure.js';
+import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod, formatDateTime } from './pure.js';
 import { buildHistStatEl } from './ui.js';
 import { state } from './admin-local-state.js';
 import { setupCatalog, renderCategoryOptions, renderProductList } from './admin-local-catalog.js';
@@ -442,12 +443,14 @@ function renderHistory(orders) {
   for (const o of orders) {
     const row = document.createElement('div');
     row.className = 'consolidated-row';
-    const closedDate = o.closedAt?.toDate ? o.closedAt.toDate().toLocaleDateString('es') : '—';
+    const closedDate = formatDateTime(o.closedAt?.toDate ? o.closedAt.toDate() : null);
+    const closedByName = o.closedBy ? userById.get(o.closedBy)?.name || 'alguien' : null;
+    const closedText = `Cerrado el ${closedDate}${closedByName ? ` por ${closedByName}` : ''}`;
     row.innerHTML = `
       <div class="consolidated-row-head">
         <div>
           <p class="product-name">${escapeHtml(formatPeriod(o, { includeYear: true }))}</p>
-          <p class="product-meta">Cerrado el ${escapeHtml(closedDate)}</p>
+          <p class="product-meta">${escapeHtml(closedText)}</p>
         </div>
         <span class="chevron">▾</span>
       </div>
@@ -464,7 +467,16 @@ function renderHistory(orders) {
       loaded = true;
       detail.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
       try {
-        const { items: histItems, adjustments: histAdjustments } = await getOrderDetail(state.profile.salonId, o.id);
+        const [{ items: rawItems, adjustments: histAdjustments }, submittedUserIds] = await Promise.all([
+          getOrderDetail(state.profile.salonId, o.id),
+          getOrderSubmittedUserIds(state.profile.salonId, o.id),
+        ]);
+        // Si alguien agregó cosas al carrito pero nunca cerró/envió su
+        // propio pedido (submissions/{uid}), esa línea no cuenta acá aunque
+        // el admin haya cerrado todo el período — no fue una decisión final
+        // de esa persona.
+        const submittedSet = new Set(submittedUserIds);
+        const histItems = rawItems.filter((i) => submittedSet.has(i.userId));
         const productGroups = consolidateByProduct(histItems, state.products, state.categories, histAdjustments);
         const userGroups = consolidateByUser(histItems, state.products);
         // La recepción ya no vive en una colección aparte: se deriva sumando
@@ -793,6 +805,18 @@ function renderHistProductView(container, groups, categoryById, userById = new M
 
         costEntry.recibidoCost = knownPrice !== null && hasReceived ? b.receivedQuantity * knownPrice : 0;
 
+        // Total de esta línea puntual: precio × lo recibido si ya se cargó,
+        // si no, precio × lo pedido (mismo criterio que "Total pedido" de
+        // más abajo, pero por línea en vez de para todo el período).
+        const lineQty = hasReceived ? b.receivedQuantity : item.totalQuantity;
+        const lineTotal = knownPrice !== null ? lineQty * knownPrice : null;
+        const { wrap: totalWrap, valueEl: totalValueEl } = buildHistStatEl(
+          'Total',
+          lineTotal !== null ? formatPrice(lineTotal) : '—',
+          lineTotal === null ? 'muted' : null
+        );
+        statsEl.appendChild(totalWrap);
+
         const metaEl = receivedMetaEl(
           b.receivedUpdatedBy,
           b.receivedUpdatedAt?.toDate ? b.receivedUpdatedAt.toDate() : null,
@@ -820,6 +844,8 @@ function renderHistProductView(container, groups, categoryById, userById = new M
                 diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
                 diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
                 setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
+                totalValueEl.textContent = unitPrice !== null ? formatPrice(value * unitPrice) : '—';
+                totalValueEl.className = `hist-stat-value${unitPrice === null ? ' hist-stat-muted' : ''}`;
                 if (unitPrice !== null) {
                   costEntry.pedidoCost = item.totalQuantity * unitPrice;
                   costEntry.recibidoCost = value * unitPrice;
@@ -853,6 +879,18 @@ function renderHistProductView(container, groups, categoryById, userById = new M
         statsEl.appendChild(diffWrap);
         costEntry.recibidoCost = knownPrice !== null && anyReceived() ? sumReceived() * knownPrice : 0;
 
+        // Total de esta línea (agregado de todo el equipo para este
+        // producto): precio × lo recibido en total, o × lo pedido si
+        // todavía no se cargó nada.
+        const initialQty = anyReceived() ? sumReceived() : item.totalQuantity;
+        const initialTotal = knownPrice !== null ? initialQty * knownPrice : null;
+        const { wrap: totalWrap, valueEl: totalValueEl } = buildHistStatEl(
+          'Total',
+          initialTotal !== null ? formatPrice(initialTotal) : '—',
+          initialTotal === null ? 'muted' : null
+        );
+        statsEl.appendChild(totalWrap);
+
         function refreshAggregate() {
           const has = anyReceived();
           const sum = sumReceived();
@@ -862,6 +900,10 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           diffValueEl.textContent = has ? (diff > 0 ? `+${diff}` : String(diff)) : '—';
           diffValueEl.className = `hist-stat-value hist-stat-${diffToneFor(has, diff)}`;
           costEntry.recibidoCost = knownPrice !== null && has ? sum * knownPrice : 0;
+          const qty = has ? sum : item.totalQuantity;
+          const total = knownPrice !== null ? qty * knownPrice : null;
+          totalValueEl.textContent = total !== null ? formatPrice(total) : '—';
+          totalValueEl.className = `hist-stat-value${total === null ? ' hist-stat-muted' : ''}`;
           recomputeTotals();
         }
 

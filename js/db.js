@@ -32,6 +32,7 @@ const adjustmentsCol = (salonId, orderId) => collection(db, 'salons', salonId, '
 const adjustmentRef = (salonId, orderId, productId) =>
   doc(db, 'salons', salonId, 'orders', orderId, 'adjustments', productId);
 const submissionRef = (salonId, orderId, uid) => doc(db, 'salons', salonId, 'orders', orderId, 'submissions', uid);
+const submissionsCol = (salonId, orderId) => collection(db, 'salons', salonId, 'orders', orderId, 'submissions');
 
 // ---------------------------------------------------------------------------
 // Suscripciones en tiempo real (catálogo se ve "sin escribir": categorías +
@@ -79,6 +80,18 @@ export async function getOrderDetail(salonId, orderId) {
     items: itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     adjustments: adjustmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
   };
+}
+
+/**
+ * IDs de los usuarios que efectivamente "cerraron" (enviaron) su propio
+ * pedido en este período — ver submissions/{uid}. El admin puede cerrar
+ * el período completo aunque alguien nunca haya enviado el suyo; esto sirve
+ * para que esas líneas sueltas (agregadas al carrito pero nunca confirmadas
+ * por esa persona) no aparezcan en el Historial del administrador.
+ */
+export async function getOrderSubmittedUserIds(salonId, orderId) {
+  const snap = await getDocs(submissionsCol(salonId, orderId));
+  return snap.docs.map((d) => d.id);
 }
 
 /**

@@ -429,36 +429,10 @@ h1, h2, h3 {
   flex: 1;
 }
 
-.product-name-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .product-name {
   font-weight: 600;
   font-size: 15px;
   overflow-wrap: anywhere;
-}
-
-/* Código de tono como ficha de color aparte — así lo lee un colorista en
-   una etiqueta, no como un dato más mezclado en el texto gris. */
-.shade-chip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 1;
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 1px 7px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--accent);
 }
 
 .product-meta {
@@ -522,9 +496,12 @@ h1, h2, h3 {
   font-weight: 500;
   margin: 0 0 6px;
 }
+/* auto-fit en vez de un número fijo de columnas: esta grilla la comparten
+   el Historial del usuario básico (4 stats: Pedido/Llegó/Precio/Mi total)
+   y el del admin (5, con "Total" agregado) sin necesitar dos reglas. */
 .hist-item-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 6px 10px;
 }
 .hist-stat {

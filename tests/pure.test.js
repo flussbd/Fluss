@@ -7,6 +7,7 @@ import {
   escapeHtml,
   receiptDiffClass,
   formatPeriod,
+  formatDateTime,
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
@@ -90,6 +91,20 @@ describe('formatPeriod', () => {
   it('devuelve "" si falta alguna de las dos fechas', () => {
     expect(formatPeriod({ periodStart: '2026-07-12' })).toBe('');
     expect(formatPeriod({})).toBe('');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('formatea fecha y hora juntas', () => {
+    const d = new Date(2026, 6, 24, 10, 5); // 24 jul 2026, 10:05 (mes 0-indexado)
+    const text = formatDateTime(d).replace(/\s/g, '');
+    expect(text).toContain('24/7/2026');
+    expect(text).toContain('10:05');
+  });
+
+  it('devuelve "—" si no hay fecha', () => {
+    expect(formatDateTime(null)).toBe('—');
+    expect(formatDateTime(undefined)).toBe('—');
   });
 });
 

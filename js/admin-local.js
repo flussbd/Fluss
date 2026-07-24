@@ -702,7 +702,7 @@ function buildReceivedByProductMap(groups) {
   return map;
 }
 
-/** "Cargado por X el 12 jul." — quién y cuándo se registró la recepción de una línea puntual. */
+/** "Cargado por X el 24/7/2026, 10:05" — quién y cuándo se registró la recepción de una línea puntual. */
 function receivedMetaEl(uid, when, userById) {
   const p = document.createElement('p');
   p.className = 'text-sm text-muted';
@@ -718,8 +718,7 @@ function setReceivedMetaText(el, uid, when, userById) {
   }
   el.classList.remove('hidden');
   const name = userById.get(uid)?.name || 'alguien';
-  const dateText = when ? when.toLocaleDateString('es') : 'recién';
-  el.textContent = `Cargado por ${name} el ${dateText}`;
+  el.textContent = `Cargado por ${name} el ${formatDateTime(when)}`;
 }
 
 /** Mapea (hasReceived, diff) a un tono visual — mismo criterio en toda la vista. */
@@ -813,6 +812,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
 
       if (singlePerson) {
         const b = item.breakdown[0];
+        const alreadySaved = typeof b.receivedQuantity === 'number';
         const recibidoWrap = document.createElement('section');
         recibidoWrap.className = 'hist-stat';
         const recibidoLabelEl = document.createElement('span');
@@ -823,13 +823,16 @@ function renderHistProductView(container, groups, categoryById, userById = new M
         input.type = 'number';
         input.min = '0';
         input.placeholder = '0';
-        if (typeof b.receivedQuantity === 'number') input.value = b.receivedQuantity;
-        input.disabled = !ctx;
+        if (alreadySaved) input.value = b.receivedQuantity;
+        // Una vez guardado con el botón queda de solo lectura — no se puede
+        // volver a tocar por accidente. También deshabilitado si no hay ctx
+        // (recepción del período ya finalizada).
+        input.disabled = !ctx || alreadySaved;
         recibidoWrap.appendChild(recibidoLabelEl);
         recibidoWrap.appendChild(input);
         statsEl.appendChild(recibidoWrap);
 
-        const hasReceived = typeof b.receivedQuantity === 'number';
+        const hasReceived = alreadySaved;
         const diff = hasReceived ? b.receivedQuantity - item.totalQuantity : 0;
         const diffText = hasReceived ? (diff > 0 ? `+${diff}` : String(diff)) : '—';
         const { wrap: diffWrap, valueEl: diffValueEl } = buildHistStatEl('Diferencia', diffText, diffToneFor(hasReceived, diff));
@@ -855,15 +858,29 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           userById
         );
         row.appendChild(statsEl);
+
+        let saveBtn = null;
+        if (ctx && !alreadySaved) {
+          saveBtn = document.createElement('button');
+          saveBtn.type = 'button';
+          saveBtn.className = 'btn btn-secondary btn-sm mt-4';
+          saveBtn.textContent = 'Guardar recibido';
+          row.appendChild(saveBtn);
+        }
+
         row.appendChild(metaEl);
         container.appendChild(row);
 
-        if (ctx) {
+        if (saveBtn) {
           input.addEventListener('click', (e) => e.stopPropagation());
-          input.addEventListener('change', () => {
+          saveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
-            if (value === null) return;
-            const previousValue = b.receivedQuantity ?? '';
+            if (value === null) {
+              alert('Ingresá una cantidad recibida.');
+              return;
+            }
+            saveBtn.disabled = true;
             // Se guarda el precio ACTUAL del producto como precio "congelado"
             // de esta recepción, para que no cambie si después se edita el
             // precio del producto en el catálogo.
@@ -872,6 +889,9 @@ function renderHistProductView(container, groups, categoryById, userById = new M
               .then(() => {
                 b.receivedQuantity = value;
                 b.receivedUnitPrice = unitPrice;
+                input.value = value;
+                input.disabled = true;
+                saveBtn.remove();
                 const d = value - item.totalQuantity;
                 diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
                 diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
@@ -886,7 +906,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
               })
               .catch((err) => {
                 console.error(err);
-                input.value = previousValue;
+                saveBtn.disabled = false;
                 alert('No se pudo guardar lo recibido. Probá de nuevo.');
               });
           });
@@ -950,6 +970,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
         peopleLabel.textContent = 'Recibido por persona:';
         peopleWrap.appendChild(peopleLabel);
         for (const b of item.breakdown) {
+          const alreadySaved = typeof b.receivedQuantity === 'number';
           // <div> a propósito: dentro de .consolidated-row-detail cualquier
           // <div> hijo recibe display:flex + justify-content:space-between,
           // que es justo el layout label/input que queremos acá.
@@ -961,10 +982,21 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           input.type = 'number';
           input.min = '0';
           input.className = 'input alloc-input';
-          if (typeof b.receivedQuantity === 'number') input.value = b.receivedQuantity;
-          input.disabled = !ctx;
+          if (alreadySaved) input.value = b.receivedQuantity;
+          // Igual que en el caso de una sola persona: una vez guardado con
+          // el botón queda de solo lectura.
+          input.disabled = !ctx || alreadySaved;
           personRow.appendChild(label);
           personRow.appendChild(input);
+
+          let saveBtn = null;
+          if (ctx && !alreadySaved) {
+            saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.className = 'btn btn-ghost btn-sm';
+            saveBtn.textContent = 'Guardar';
+            personRow.appendChild(saveBtn);
+          }
           peopleWrap.appendChild(personRow);
 
           const metaEl = receivedMetaEl(
@@ -975,23 +1007,30 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           metaEl.style.marginTop = '-4px';
           peopleWrap.appendChild(metaEl);
 
-          if (ctx) {
+          if (saveBtn) {
             input.addEventListener('click', (e) => e.stopPropagation());
-            input.addEventListener('change', () => {
+            saveBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
               const value = input.value.trim() === '' ? null : Math.max(0, Number(input.value) || 0);
-              if (value === null) return;
-              const previousValue = b.receivedQuantity ?? '';
+              if (value === null) {
+                alert('Ingresá una cantidad recibida.');
+                return;
+              }
+              saveBtn.disabled = true;
               const unitPrice = typeof item.product.price === 'number' ? item.product.price : null;
               setItemReceivedQuantity(ctx.salonId, ctx.orderId, b.userId, item.product.id, value, ctx.adminUid, unitPrice)
                 .then(() => {
                   b.receivedQuantity = value;
                   b.receivedUnitPrice = unitPrice;
+                  input.value = value;
+                  input.disabled = true;
+                  saveBtn.remove();
                   setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
                   refreshAggregate();
                 })
                 .catch((err) => {
                   console.error(err);
-                  input.value = previousValue;
+                  saveBtn.disabled = false;
                   alert('No se pudo guardar lo recibido. Probá de nuevo.');
                 });
             });

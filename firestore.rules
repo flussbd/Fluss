@@ -83,6 +83,22 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/salons/$(salonId)).data.get('active', true) == true;
     }
 
+    // Puntero denormalizado en salons/{salonId}.currentOrderId: el id del
+    // pedido draft/reviewing actual, o ausente/null si no hay ninguno. Lo
+    // mantiene sincronizado createOrder()/closeOrder() en db.js (transacción
+    // y batch respectivamente) — con esto SÍ se puede bloquear a nivel de
+    // reglas que se cree un segundo período mientras el primero sigue
+    // abierto, algo que una regla no puede resolver sola (no hay forma de
+    // preguntarle a una regla "¿ya existe otro doc con status=draft en esta
+    // colección?", solo se puede leer un documento puntual por su path).
+    // Si el doc del salón no existe (mismo caso que salonIsActive: no
+    // debería pasar en la app real, pero sí en tests que no lo crean antes)
+    // se asume que NO hay período abierto.
+    function salonHasOpenOrder(salonId) {
+      return exists(/databases/$(database)/documents/salons/$(salonId))
+        && get(/databases/$(database)/documents/salons/$(salonId)).data.get('currentOrderId', null) != null;
+    }
+
     function isPlatformAdmin() {
       return myRole() == 'platform_admin';
     }
@@ -225,8 +241,14 @@ service cloud.firestore {
       // ---------- orders ----------
       match /orders/{orderId} {
         allow read: if isMemberOf(salonId) || isPlatformAdmin();
-        // Solo el admin local define fechas, abre y cierra el pedido.
-        allow write: if (isLocalAdminOf(salonId) && salonIsActive(salonId)) || isPlatformAdmin();
+        // Solo el admin local define fechas, abre y cierra el pedido. Al
+        // CREAR uno nuevo, además, no puede haber otro ya abierto — ver
+        // salonHasOpenOrder(). update/delete (cerrar, reabrir borrador,
+        // finalizar recepción, etc.) no llevan esa restricción: son
+        // operaciones sobre un pedido que ya existe.
+        allow create: if (isLocalAdminOf(salonId) && salonIsActive(salonId) && !salonHasOpenOrder(salonId))
+          || isPlatformAdmin();
+        allow update, delete: if (isLocalAdminOf(salonId) && salonIsActive(salonId)) || isPlatformAdmin();
 
         // ---------- order items (uno por usuario+producto, id = `${uid}_${productId}`) ----------
         // Los mismos docs también guardan, más adelante, cuánto le llegó a

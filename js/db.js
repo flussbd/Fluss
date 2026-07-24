@@ -14,6 +14,8 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  runTransaction,
+  writeBatch,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
 
@@ -207,16 +209,38 @@ export function unsubmitMyOrder(salonId, orderId, uid) {
 // ---------------------------------------------------------------------------
 // Escrituras — administrador local
 // ---------------------------------------------------------------------------
+/**
+ * Como solo puede haber un período (draft/reviewing) abierto a la vez, esto
+ * ya no es solo una convención de la UI (listenCurrentOrder filtrando por
+ * status): salons/{salonId}.currentOrderId es un puntero denormalizado que
+ * firestore.rules puede leer con un simple get() para bloquear la creación
+ * de un segundo pedido mientras el primero sigue abierto — algo que las
+ * reglas no pueden resolver solas con una consulta a la colección. Se
+ * mantiene sincronizado acá mismo, dentro de una transacción: si dos
+ * pestañas intentan abrir un período al mismo tiempo, Firestore reintenta
+ * la transacción que llega segunda, que en el reintento ve currentOrderId
+ * ya ocupado y aborta (ver salonHasOpenOrder() en firestore.rules).
+ */
 export async function createOrder(salonId, periodStart, periodEnd, periodEndTime = '10:00') {
-  return addDoc(ordersCol(salonId), {
-    status: 'draft',
-    periodStart, // string 'YYYY-MM-DD', la define el admin local
-    periodEnd,
-    periodEndTime: periodEndTime || '10:00', // string 'HH:MM', hora del cierre automático (editable en el modal)
-    closedAt: null,
-    closedBy: null,
-    createdAt: serverTimestamp(),
+  const newOrderRef = doc(ordersCol(salonId));
+  await runTransaction(db, async (tx) => {
+    const salonSnap = await tx.get(salonRef(salonId));
+    const currentOrderId = salonSnap.exists() ? salonSnap.data().currentOrderId : null;
+    if (currentOrderId) {
+      throw new Error('Ya hay un período abierto en este salón. Cerralo antes de abrir uno nuevo.');
+    }
+    tx.set(newOrderRef, {
+      status: 'draft',
+      periodStart, // string 'YYYY-MM-DD', la define el admin local
+      periodEnd,
+      periodEndTime: periodEndTime || '10:00', // string 'HH:MM', hora del cierre automático (editable en el modal)
+      closedAt: null,
+      closedBy: null,
+      createdAt: serverTimestamp(),
+    });
+    tx.set(salonRef(salonId), { currentOrderId: newOrderRef.id }, { merge: true });
   });
+  return newOrderRef;
 }
 
 export function startReview(salonId, orderId) {
@@ -242,12 +266,16 @@ export function finalizeReception(salonId, orderId, adminUid) {
   });
 }
 
+/** Cierra el pedido y libera el puntero currentOrderId (ver createOrder) en un solo batch atómico. */
 export function closeOrder(salonId, orderId, adminUid) {
-  return updateDoc(orderRef(salonId, orderId), {
+  const batch = writeBatch(db);
+  batch.update(orderRef(salonId, orderId), {
     status: 'completed',
     closedAt: serverTimestamp(),
     closedBy: adminUid,
   });
+  batch.set(salonRef(salonId), { currentOrderId: null }, { merge: true });
+  return batch.commit();
 }
 
 export function setAdjustment(salonId, orderId, productId, quantity, adminUid) {

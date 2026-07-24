@@ -317,6 +317,66 @@ describe('recepción (receivedQuantity guardado directo en items/{itemId})', () 
   });
 });
 
+describe('un solo período abierto por salón (currentOrderId)', () => {
+  it('el local_admin NO puede crear un pedido nuevo si salons/{salonId}.currentOrderId ya apunta a otro', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', currentOrderId: 'o1' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o2`), { status: 'draft', periodStart: '2026-08-01', periodEnd: '2026-08-15' })
+    );
+  });
+
+  it('el local_admin SÍ puede crear un pedido si currentOrderId es null (o no existe)', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', currentOrderId: null });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft', periodStart: '2026-08-01', periodEnd: '2026-08-15' })
+    );
+  });
+
+  it('sin doc de salón (caso raro de test) se asume que no hay período abierto', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft', periodStart: '2026-08-01', periodEnd: '2026-08-15' })
+    );
+  });
+
+  it('el admin de plataforma puede crear un pedido igual, aunque ya haya uno abierto', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', currentOrderId: 'o1' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+    });
+    const db = ctxFor('plat1').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, `salons/${SALON_A}/orders/o2`), { status: 'draft', periodStart: '2026-08-01', periodEnd: '2026-08-15' })
+    );
+  });
+
+  it('cerrar el período (update) y liberar el puntero (currentOrderId: null) no requiere la validación de creación', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}`), { name: 'Salón A', currentOrderId: 'o1' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'draft' });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'completed', closedBy: 'adminA' })
+    );
+    await assertSucceeds(updateDoc(doc(db, `salons/${SALON_A}`), { currentOrderId: null }));
+  });
+});
+
 describe('candado de recepción a nivel de reglas (no solo UI)', () => {
   it('el local_admin NO puede modificar receivedQuantity de una línea que ya lo tenía guardado', async () => {
     await seed(async (db) => {

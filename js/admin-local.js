@@ -379,7 +379,11 @@ function setupPeriodModal() {
       modal.hidden = true;
     } catch (err) {
       console.error(err);
-      alert('No se pudo abrir el período. Probá de nuevo.');
+      // "Ya hay un período abierto..." es nuestro propio error (ver
+      // createOrder en db.js) — pasa, por ejemplo, si alguien tenía dos
+      // pestañas abiertas y confirmó en ambas. El resto son errores
+      // genéricos (red, permisos).
+      alert(err?.message?.startsWith('Ya hay un período abierto') ? err.message : 'No se pudo abrir el período. Probá de nuevo.');
     }
   });
 }

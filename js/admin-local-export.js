@@ -340,7 +340,10 @@ export function openProviderExportModal(
   select.innerHTML = '';
   const allOpt = document.createElement('option');
   allOpt.value = '';
-  allOpt.textContent = 'Todos los proveedores (una hoja por cada uno)';
+  // Texto corto a propósito: el <select> nativo corta el texto sin puntos
+  // suspensivos si no entra en el ancho de la caja, y no se puede controlar
+  // bien con CSS — más seguro achicar el texto que confiar en que entre.
+  allOpt.textContent = 'Todos (una hoja por proveedor)';
   select.appendChild(allOpt);
   for (const name of providerNames) {
     const opt = document.createElement('option');

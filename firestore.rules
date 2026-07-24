@@ -133,19 +133,17 @@ service cloud.firestore {
             .hasAny(['receivedQuantity', 'receivedUnitPrice', 'receivedUpdatedBy', 'receivedUpdatedAt']);
     }
 
-    // La UI (admin-local.js) bloquea el campo "Recibido" de una línea apenas
-    // se guarda (botón "Guardar"), y bloquea TODO una vez que el admin marca
-    // el período como "recepción finalizada" (finalizeReception) — pero
-    // hasta ahora eso era solo de interfaz: nada impedía sobrescribirlo con
-    // una llamada directa a la API. Esta función hace ese candado real:
-    //   a) esta línea puntual ya tiene un receivedQuantity guardado, o
-    //   b) el pedido entero ya está con receptionFinalized == true
-    // En cualquiera de los dos casos, los campos de recepción quedan
-    // inmutables para el admin local (el admin de plataforma sigue sin
-    // restricción, por si hace falta corregir algo como soporte).
+    // La UI bloquea los campos de recepción de un período una vez que el
+    // admin lo marca como "recepción finalizada" (finalizeReception) — esta
+    // función hace ese candado real a nivel de reglas (antes también
+    // bloqueaba una línea puntual apenas se guardaba una vez, pero eso era
+    // solo protección contra un click accidental, no una regla de negocio:
+    // terminaba impidiendo corregir un error real de tipeo. Para eso está
+    // reopenReception(), que vuelve receptionFinalized a false). El admin de
+    // plataforma sigue sin esta restricción, por si hace falta corregir algo
+    // como soporte incluso con el período finalizado.
     function receivedFieldsLocked(salonId, orderId) {
-      return (resource != null && resource.data.get('receivedQuantity', null) != null)
-        || get(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)).data.get('receptionFinalized', false) == true;
+      return get(/databases/$(database)/documents/salons/$(salonId)/orders/$(orderId)).data.get('receptionFinalized', false) == true;
     }
 
     // Mismo patrón que receivedFieldsUntouched(), para el campo "active" de

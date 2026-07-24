@@ -266,6 +266,21 @@ export function finalizeReception(salonId, orderId, adminUid) {
   });
 }
 
+/**
+ * Deshace finalizeReception: si el admin se equivocó en algo y ya había
+ * finalizado el período, esto lo vuelve a dejar editable (ver
+ * receivedFieldsLocked en firestore.rules, que depende de este campo).
+ * Guarda quién y cuándo lo reabrió, sin borrar el rastro de cuándo se había
+ * finalizado antes.
+ */
+export function reopenReception(salonId, orderId, adminUid) {
+  return updateDoc(orderRef(salonId, orderId), {
+    receptionFinalized: false,
+    receptionReopenedAt: serverTimestamp(),
+    receptionReopenedBy: adminUid,
+  });
+}
+
 /** Cierra el pedido y libera el puntero currentOrderId (ver createOrder) en un solo batch atómico. */
 export function closeOrder(salonId, orderId, adminUid) {
   const batch = writeBatch(db);

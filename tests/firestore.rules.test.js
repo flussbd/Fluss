@@ -378,7 +378,12 @@ describe('un solo período abierto por salón (currentOrderId)', () => {
 });
 
 describe('candado de recepción a nivel de reglas (no solo UI)', () => {
-  it('el local_admin NO puede modificar receivedQuantity de una línea que ya lo tenía guardado', async () => {
+  it('el local_admin SÍ puede corregir receivedQuantity de una línea que ya tenía guardado, mientras no esté finalizada la recepción', async () => {
+    // El candado "una vez guardada, nunca más" era solo protección contra un
+    // click accidental (ver comentario en receivedFieldsLocked) — bloqueaba
+    // corregir un error real de tipeo. Ahora solo se bloquea con
+    // receptionFinalized == true (y el botón "Editar" de la UI depende de
+    // esto para poder ofrecer una corrección puntual).
     await seed(async (db) => {
       await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
       await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
@@ -391,12 +396,8 @@ describe('candado de recepción a nivel de reglas (no solo UI)', () => {
       });
     });
     const db = ctxFor('adminA').firestore();
-    await assertFails(
-      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 999 })
-    );
-    // Sigue pudiendo tocar otros campos del mismo doc (ej. la cantidad pedida).
     await assertSucceeds(
-      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { quantity: 6 })
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 5 })
     );
   });
 
@@ -420,7 +421,7 @@ describe('candado de recepción a nivel de reglas (no solo UI)', () => {
     );
   });
 
-  it('el local_admin NO puede borrar una línea que ya tiene receivedQuantity guardado', async () => {
+  it('el local_admin SÍ puede borrar una línea con receivedQuantity guardado, mientras no esté finalizada la recepción', async () => {
     await seed(async (db) => {
       await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
       await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
@@ -432,7 +433,7 @@ describe('candado de recepción a nivel de reglas (no solo UI)', () => {
       });
     });
     const db = ctxFor('adminA').firestore();
-    await assertFails(deleteDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
+    await assertSucceeds(deleteDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
   });
 
   it('con el período "recepción finalizada", el local_admin no puede cargar ni una línea que nunca se había guardado', async () => {
@@ -453,10 +454,45 @@ describe('candado de recepción a nivel de reglas (no solo UI)', () => {
     await assertSucceeds(getDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`)));
   });
 
-  it('el admin de plataforma puede corregir receivedQuantity aunque ya esté guardado (soporte)', async () => {
+  it('con el período "recepción finalizada", el local_admin tampoco puede corregir una línea que YA tenía receivedQuantity guardado', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'completed', receptionFinalized: true });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertFails(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 5 })
+    );
+  });
+
+  it('reabrir la recepción (receptionFinalized: false) permite volver a corregir una línea ya guardada', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'users/adminA'), { role: 'local_admin', salonId: SALON_A, email: 'adminA@fluss.test' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'completed', receptionFinalized: true });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
+        userId: 'basicA',
+        productId: 'p1',
+        quantity: 5,
+        receivedQuantity: 3,
+      });
+    });
+    const db = ctxFor('adminA').firestore();
+    await assertSucceeds(updateDoc(doc(db, `salons/${SALON_A}/orders/o1`), { receptionFinalized: false }));
+    await assertSucceeds(
+      updateDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), { receivedQuantity: 5 })
+    );
+  });
+
+  it('el admin de plataforma puede corregir receivedQuantity aunque el período tenga la recepción finalizada (soporte)', async () => {
     await seed(async (db) => {
       await setDoc(doc(db, 'users/plat1'), { role: 'platform_admin', salonId: null, email: 'plat1@fluss.test' });
-      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'reviewing' });
+      await setDoc(doc(db, `salons/${SALON_A}/orders/o1`), { status: 'completed', receptionFinalized: true });
       await setDoc(doc(db, `salons/${SALON_A}/orders/o1/items/basicA_p1`), {
         userId: 'basicA',
         productId: 'p1',

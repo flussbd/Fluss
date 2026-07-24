@@ -13,6 +13,7 @@ import {
   getOrderSubmittedUserIds,
   setItemReceivedQuantity,
   finalizeReception,
+  reopenReception,
   consolidateByProduct,
   consolidateByUser,
 } from './db.js';
@@ -174,6 +175,29 @@ function renderHistory(orders) {
               : '';
             badge.textContent = `✓ Recepción finalizada${finalizedDate}. Ya no se puede modificar.`;
             finalizeWrap.appendChild(badge);
+
+            // Por si se equivocaron en algo y ya habían finalizado: esto
+            // vuelve a dejar todo editable (ver reopenReception en db.js).
+            const reopenBtn = document.createElement('button');
+            reopenBtn.type = 'button';
+            reopenBtn.className = 'btn btn-ghost btn-sm mt-4';
+            reopenBtn.textContent = 'Reabrir recepción para corregir';
+            reopenBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              if (!confirm('¿Reabrir la recepción de este período para corregir algo? Vas a poder volver a editar las cantidades recibidas.')) return;
+              reopenBtn.disabled = true;
+              try {
+                await reopenReception(state.profile.salonId, o.id, state.user.uid);
+                o.receptionFinalized = false;
+                renderFinalizeControl();
+                renderDetailViews();
+              } catch (err) {
+                console.error(err);
+                alert('No se pudo reabrir la recepción. Probá de nuevo.');
+                reopenBtn.disabled = false;
+              }
+            });
+            finalizeWrap.appendChild(reopenBtn);
             return;
           }
           const btn = document.createElement('button');
@@ -295,6 +319,55 @@ function diffToneFor(hasReceived, diff) {
   return { 'receipt-diff-ok': 'ok', 'receipt-diff-short': 'warn', 'receipt-diff-over': 'warn', 'receipt-diff-pending': 'muted' }[
     receiptDiffClass(hasReceived, diff)
   ];
+}
+
+/**
+ * Le agrega un botón "Editar" a una línea que YA se había guardado — por si
+ * el admin se equivocó al cargarla y necesita corregirla, sin tener que
+ * reabrir toda la recepción del período ni volver a guardar el resto del
+ * proveedor. Al confirmar la corrección vuelve a mostrar "Editar" por si
+ * hace falta tocarla de nuevo.
+ */
+function attachEditControl(holderEl, input, ctx, { userId, productId, unitPrice, onSaved }) {
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'btn btn-ghost btn-sm';
+  editBtn.textContent = 'Editar';
+  holderEl.appendChild(editBtn);
+
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    input.disabled = false;
+    input.focus();
+    editBtn.remove();
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn btn-secondary btn-sm';
+    saveBtn.textContent = 'Guardar corrección';
+    holderEl.appendChild(saveBtn);
+
+    saveBtn.addEventListener('click', async (e2) => {
+      e2.stopPropagation();
+      const raw = input.value.trim();
+      if (raw === '') {
+        alert('Ingresá una cantidad recibida.');
+        return;
+      }
+      const value = Math.max(0, Number(raw) || 0);
+      saveBtn.disabled = true;
+      try {
+        await setItemReceivedQuantity(ctx.salonId, ctx.orderId, userId, productId, value, ctx.adminUid, unitPrice);
+        onSaved(value);
+        saveBtn.remove();
+        attachEditControl(holderEl, input, ctx, { userId, productId, unitPrice, onSaved });
+      } catch (err) {
+        console.error(err);
+        saveBtn.disabled = false;
+        alert('No se pudo guardar la corrección. Probá de nuevo.');
+      }
+    });
+  });
 }
 
 /**
@@ -479,6 +552,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
         // con guardar tal cual; si llegó distinto, se corrige el número.
         input.value = alreadySaved ? b.receivedQuantity : item.totalQuantity;
         input.disabled = !ctx || alreadySaved;
+        input.addEventListener('click', (e) => e.stopPropagation());
         recibidoWrap.appendChild(recibidoLabelEl);
         recibidoWrap.appendChild(input);
         statsEl.appendChild(recibidoWrap);
@@ -509,31 +583,31 @@ function renderHistProductView(container, groups, categoryById, userById = new M
         row.appendChild(metaEl);
         container.appendChild(row);
 
+        const onSavedSingle = (value) => {
+          b.receivedQuantity = value;
+          b.receivedUnitPrice = unitPrice;
+          input.value = value;
+          input.disabled = true;
+          const d = value - item.totalQuantity;
+          diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
+          diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
+          setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
+          totalValueEl.textContent = unitPrice !== null ? formatPrice(value * unitPrice) : '—';
+          totalValueEl.className = `hist-stat-value${unitPrice === null ? ' hist-stat-muted' : ''}`;
+          if (unitPrice !== null) {
+            costEntry.pedidoCost = item.totalQuantity * unitPrice;
+            costEntry.recibidoCost = value * unitPrice;
+            recomputeTotals();
+          }
+        };
+
         if (ctx && !alreadySaved) {
-          input.addEventListener('click', (e) => e.stopPropagation());
-          pendingLines.push({
-            input,
-            userId: b.userId,
-            productId: item.product.id,
-            unitPrice,
-            onSaved(value) {
-              b.receivedQuantity = value;
-              b.receivedUnitPrice = unitPrice;
-              input.value = value;
-              input.disabled = true;
-              const d = value - item.totalQuantity;
-              diffValueEl.className = `hist-stat-value hist-stat-${d === 0 ? 'ok' : 'warn'}`;
-              diffValueEl.textContent = d > 0 ? `+${d}` : String(d);
-              setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
-              totalValueEl.textContent = unitPrice !== null ? formatPrice(value * unitPrice) : '—';
-              totalValueEl.className = `hist-stat-value${unitPrice === null ? ' hist-stat-muted' : ''}`;
-              if (unitPrice !== null) {
-                costEntry.pedidoCost = item.totalQuantity * unitPrice;
-                costEntry.recibidoCost = value * unitPrice;
-                recomputeTotals();
-              }
-            },
-          });
+          pendingLines.push({ input, userId: b.userId, productId: item.product.id, unitPrice, onSaved: onSavedSingle });
+        } else if (ctx && alreadySaved) {
+          // Ya se había guardado: en vez de un input editable de entrada,
+          // ofrecemos "Editar" para corregir un error puntual sin tener que
+          // reabrir toda la recepción del período.
+          attachEditControl(row, input, ctx, { userId: b.userId, productId: item.product.id, unitPrice, onSaved: onSavedSingle });
         }
         continue; // ya insertamos row arriba, no repetir abajo
       } else {
@@ -606,6 +680,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           // Prefilled con lo pedido por esa persona.
           input.value = alreadySaved ? b.receivedQuantity : b.quantity;
           input.disabled = !ctx || alreadySaved;
+          input.addEventListener('click', (e) => e.stopPropagation());
           personRow.appendChild(label);
           personRow.appendChild(input);
           peopleWrap.appendChild(personRow);
@@ -618,22 +693,19 @@ function renderHistProductView(container, groups, categoryById, userById = new M
           metaEl.style.marginTop = '-4px';
           peopleWrap.appendChild(metaEl);
 
+          const onSavedPerson = (value) => {
+            b.receivedQuantity = value;
+            b.receivedUnitPrice = unitPrice;
+            input.value = value;
+            input.disabled = true;
+            setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
+            refreshAggregate();
+          };
+
           if (ctx && !alreadySaved) {
-            input.addEventListener('click', (e) => e.stopPropagation());
-            pendingLines.push({
-              input,
-              userId: b.userId,
-              productId: item.product.id,
-              unitPrice,
-              onSaved(value) {
-                b.receivedQuantity = value;
-                b.receivedUnitPrice = unitPrice;
-                input.value = value;
-                input.disabled = true;
-                setReceivedMetaText(metaEl, ctx.adminUid, new Date(), userById);
-                refreshAggregate();
-              },
-            });
+            pendingLines.push({ input, userId: b.userId, productId: item.product.id, unitPrice, onSaved: onSavedPerson });
+          } else if (ctx && alreadySaved) {
+            attachEditControl(personRow, input, ctx, { userId: b.userId, productId: item.product.id, unitPrice, onSaved: onSavedPerson });
           }
         }
         container.appendChild(peopleWrap);

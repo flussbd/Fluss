@@ -396,12 +396,25 @@ function renderHistProductView(container, groups, categoryById, userById = new M
   }
 
   for (const providerName of providerNames) {
+    // El botón "Guardar" de este proveedor se arma más abajo (recién ahí
+    // sabemos si quedó alguna línea pendiente), pero se inserta ACÁ, al
+    // lado del nombre — por eso el header ya queda armado como fila flex
+    // desde el principio y el botón se agrega adentro al final.
+    const providerHeader = document.createElement('div');
+    providerHeader.style.display = 'flex';
+    providerHeader.style.flexWrap = 'wrap';
+    providerHeader.style.justifyContent = 'space-between';
+    providerHeader.style.alignItems = 'center';
+    providerHeader.style.gap = '8px';
+    providerHeader.style.marginTop = '14px';
+
     const providerTitle = document.createElement('p');
     providerTitle.className = 'text-sm';
     providerTitle.style.fontWeight = '600';
-    providerTitle.style.marginTop = '14px';
+    providerTitle.style.margin = '0';
     providerTitle.textContent = providerName;
-    container.appendChild(providerTitle);
+    providerHeader.appendChild(providerTitle);
+    container.appendChild(providerHeader);
 
     // Líneas de ESTE proveedor que todavía no se guardaron — el botón de
     // abajo las guarda todas juntas (ver saveProviderBatch).
@@ -631,13 +644,13 @@ function renderHistProductView(container, groups, categoryById, userById = new M
     if (ctx && pendingLines.length > 0) {
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
-      saveBtn.className = 'btn btn-secondary btn-sm mt-4';
+      saveBtn.className = 'btn btn-secondary btn-sm';
       saveBtn.textContent = `Guardar recepción de ${providerName}`;
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         saveProviderBatch(pendingLines, saveBtn, ctx);
       });
-      container.appendChild(saveBtn);
+      providerHeader.appendChild(saveBtn);
     }
   }
 

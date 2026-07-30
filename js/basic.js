@@ -506,70 +506,128 @@ function renderMyHistory(orders) {
           detail.appendChild(note);
         }
 
+        // Filtro por proveedor: solo tiene sentido mostrarlo si pedí de más
+        // de uno en este período — si no, es un selector con una sola
+        // opción que no filtra nada. Filtra la LISTA de líneas de acá abajo
+        // (no los períodos del historial en sí, ver renderMonthSummary para
+        // el resumen mensual).
+        const providerNames = Array.from(
+          new Set(mineWithStatus.map((e) => e.product.supplierName || 'Sin proveedor'))
+        ).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+        let providerFilter = 'all';
+
+        if (providerNames.length > 1) {
+          const filterWrap = document.createElement('div');
+          filterWrap.className = 'field mt-4';
+          filterWrap.style.margin = '10px 0 0';
+          const filterLabel = document.createElement('label');
+          filterLabel.textContent = 'Filtrar por proveedor';
+          const select = document.createElement('select');
+          select.className = 'input';
+          const allOpt = document.createElement('option');
+          allOpt.value = 'all';
+          allOpt.textContent = 'Todos los proveedores';
+          select.appendChild(allOpt);
+          for (const name of providerNames) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            select.appendChild(opt);
+          }
+          select.addEventListener('click', (e) => e.stopPropagation());
+          select.addEventListener('change', (e) => {
+            e.stopPropagation();
+            providerFilter = select.value;
+            renderRows();
+          });
+          filterWrap.appendChild(filterLabel);
+          filterWrap.appendChild(select);
+          detail.appendChild(filterWrap);
+        }
+
         // Total del período: lo que efectivamente me llegó a mí (no lo
         // pedido — eso ya lo muestra la columna "Pedido" de cada línea). Va
         // arriba de la lista (no al final) para no tener que scrollear si
-        // pedí muchas cosas — arranca oculto y se completa después.
+        // pedí muchas cosas — arranca oculto y se completa después. Si se
+        // filtra por proveedor, pasa a ser el total de SOLO ese proveedor
+        // (ver renderRows) — la etiqueta se actualiza para que quede claro.
         const totalWrap = document.createElement('section');
         totalWrap.className = 'order-total mt-4 hidden';
-        totalWrap.innerHTML = `<span>Total</span><span class="order-total-value"></span>`;
+        totalWrap.innerHTML = `<span class="order-total-label">Total</span><span class="order-total-value"></span>`;
         detail.appendChild(totalWrap);
 
-        let myPeriodTotalLlegado = 0;
-        let myPeriodTotalKnown = false;
+        const rowsContainer = document.createElement('div');
+        detail.appendChild(rowsContainer);
 
-        for (const { item, product, hasReceived, complete } of mineWithStatus) {
-          // Ojo: <section>, no <div> — esto se inserta dentro de
-          // .consolidated-row-detail, y esa regla le pone display:flex a
-          // CUALQUIER <div> hijo (rompía el layout: nombre y stats quedaban
-          // en la misma línea en vez de uno debajo del otro).
-          const row = document.createElement('section');
-          row.className = 'hist-item';
-          const meta = [product.brand, product.format].filter(Boolean).join(' · ');
-          const noteSuffix = item.notes ? ` — ${item.notes}` : '';
+        function renderRows() {
+          rowsContainer.innerHTML = '';
+          const visible =
+            providerFilter === 'all'
+              ? mineWithStatus
+              : mineWithStatus.filter((e) => (e.product.supplierName || 'Sin proveedor') === providerFilter);
 
-          const nameEl = document.createElement('p');
-          nameEl.className = 'hist-item-name';
-          nameEl.textContent = `${product.name}${meta ? ' — ' + meta : ''}${noteSuffix}`;
-          row.appendChild(nameEl);
+          let myPeriodTotalLlegado = 0;
+          let myPeriodTotalKnown = false;
 
-          const statsEl = document.createElement('section');
-          statsEl.className = 'hist-item-stats';
+          for (const { item, product, hasReceived, complete } of visible) {
+            // Ojo: <section>, no <div> — esto se inserta dentro de
+            // .consolidated-row-detail, y esa regla le pone display:flex a
+            // CUALQUIER <div> hijo (rompía el layout: nombre y stats quedaban
+            // en la misma línea en vez de uno debajo del otro).
+            const row = document.createElement('section');
+            row.className = 'hist-item';
+            const meta = [product.brand, product.format].filter(Boolean).join(' · ');
+            const noteSuffix = item.notes ? ` — ${item.notes}` : '';
 
-          statsEl.appendChild(buildHistStat('Pedido', String(item.quantity)));
+            const nameEl = document.createElement('p');
+            nameEl.className = 'hist-item-name';
+            nameEl.textContent = `${product.name}${meta ? ' — ' + meta : ''}${noteSuffix}`;
+            row.appendChild(nameEl);
 
-          if (hasReceived) {
-            statsEl.appendChild(
-              buildHistStat('Llegó', `${item.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`, complete ? 'ok' : 'warn')
-            );
-          } else {
-            statsEl.appendChild(buildHistStat('Llegó', '—', 'muted'));
-          }
+            const statsEl = document.createElement('section');
+            statsEl.className = 'hist-item-stats';
 
-          if (typeof item.receivedUnitPrice === 'number') {
-            statsEl.appendChild(buildHistStat('Precio', formatPrice(item.receivedUnitPrice)));
-            myPeriodTotalKnown = true;
+            statsEl.appendChild(buildHistStat('Pedido', String(item.quantity)));
 
             if (hasReceived) {
-              const myArrivedCost = item.receivedQuantity * item.receivedUnitPrice;
-              myPeriodTotalLlegado += myArrivedCost;
-              statsEl.appendChild(buildHistStat('Mi total', formatPrice(myArrivedCost), complete ? 'ok' : 'warn'));
+              statsEl.appendChild(
+                buildHistStat('Llegó', `${item.receivedQuantity}${complete ? ' ✓' : ' ⚠'}`, complete ? 'ok' : 'warn')
+              );
             } else {
+              statsEl.appendChild(buildHistStat('Llegó', '—', 'muted'));
+            }
+
+            if (typeof item.receivedUnitPrice === 'number') {
+              statsEl.appendChild(buildHistStat('Precio', formatPrice(item.receivedUnitPrice)));
+              myPeriodTotalKnown = true;
+
+              if (hasReceived) {
+                const myArrivedCost = item.receivedQuantity * item.receivedUnitPrice;
+                myPeriodTotalLlegado += myArrivedCost;
+                statsEl.appendChild(buildHistStat('Mi total', formatPrice(myArrivedCost), complete ? 'ok' : 'warn'));
+              } else {
+                statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
+              }
+            } else {
+              statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));
               statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
             }
-          } else {
-            statsEl.appendChild(buildHistStat('Precio', '—', 'muted'));
-            statsEl.appendChild(buildHistStat('Mi total', '—', 'muted'));
+
+            row.appendChild(statsEl);
+            rowsContainer.appendChild(row);
           }
 
-          row.appendChild(statsEl);
-          detail.appendChild(row);
+          totalWrap.querySelector('.order-total-label').textContent =
+            providerFilter === 'all' ? 'Total' : `Total (${providerFilter})`;
+          if (myPeriodTotalKnown) {
+            totalWrap.classList.remove('hidden');
+            totalWrap.querySelector('.order-total-value').textContent = formatPrice(myPeriodTotalLlegado);
+          } else {
+            totalWrap.classList.add('hidden');
+          }
         }
 
-        if (myPeriodTotalKnown) {
-          totalWrap.classList.remove('hidden');
-          totalWrap.querySelector('.order-total-value').textContent = formatPrice(myPeriodTotalLlegado);
-        }
+        renderRows();
       } catch (err) {
         console.error(err);
         detail.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el detalle.</p>';

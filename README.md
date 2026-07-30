@@ -8,7 +8,7 @@ Primera versión de Fluss: HTML/CSS/JavaScript plano (sin build step, sin framew
 
 | Rol | Alcance | Qué puede hacer |
 |---|---|---|
-| `basic` (usuario básico) | Un salón | Ver el catálogo (sin escribir, solo tocando +/-, sin ver el proveedor), armar su pedido del período actual, agregar notas opcionales, y opcionalmente "cerrar" su propio pedido antes de que cierre el período general (una vez cerrado, sus insumos quedan fijos y recién ahí cuentan para el consolidado y el Historial del admin) |
+| `basic` (usuario básico) | Un salón | Ver el catálogo (sin escribir, solo tocando +/-, sin ver el proveedor), armar su pedido del período actual, agregar notas opcionales, opcionalmente "cerrar" su propio pedido antes de que cierre el período general (una vez cerrado, sus insumos quedan fijos y recién ahí cuentan para el consolidado y el Historial del admin), y en su propio Historial filtrar por proveedor lo que él/ella pidió en un período (acá sí ve el nombre del proveedor, a diferencia del catálogo) |
 | `local_admin` (administrador local) | Un salón | Definir las fechas de cada período (con sugerencia automática de la siguiente al cerrar una), ver el consolidado y la vista por usuario, ajustar cantidades finales, cerrar el período de solicitud y el período completo, exportar a TXT/Excel/PDF (general o por proveedor), gestionar catálogo (categorías/productos, import masivo), invitar/bloquear/dar de baja usuarios básicos, y cargar la recepción de mercadería por proveedor en el Historial (con candado: una vez guardada o con el período "recepción finalizada", no se puede volver a tocar) |
 | `platform_admin` (administrador plataforma) | Toda la plataforma | Crear salones, darlos de baja/reactivar, e invitar/dar de baja/reasignar administradores locales |
 

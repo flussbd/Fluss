@@ -150,6 +150,32 @@ export function listenCompletedOrders(salonId, cb, maxResults = 10) {
   );
 }
 
+/**
+ * Pedidos archivados (status='completed') cuyo cierre (closedAt) cae dentro
+ * de un mes calendario puntual — para el resumen mensual (ver
+ * admin-local-history.js y basic.js). A diferencia de listenCompletedOrders
+ * (paginado a los últimos N), esto trae TODOS los que caigan en ese rango
+ * sin límite: un mes natural ya acota bastante (la cadencia típica es
+ * quincenal, ~2 pedidos por mes). Usa closedAt (no periodStart/periodEnd)
+ * porque un período puede cruzar el límite de un mes calendario — closedAt
+ * es el momento en que ese gasto quedó "realizado".
+ * `month` es 1-12.
+ */
+export async function getCompletedOrdersInMonth(salonId, year, month) {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+  const snap = await getDocs(
+    query(
+      ordersCol(salonId),
+      where('status', '==', 'completed'),
+      where('closedAt', '>=', start),
+      where('closedAt', '<', end),
+      orderBy('closedAt', 'desc')
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 export function listenUsersOfSalon(salonId, cb) {
   return onSnapshot(query(collection(db, 'users'), where('salonId', '==', salonId)), (snap) =>
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))

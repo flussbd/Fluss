@@ -10,7 +10,7 @@ import {
   updateUserName,
   reassignLocalAdminSalon,
 } from './db.js';
-import { escapeHtml } from './pure.js';
+import { escapeHtml, APP_VERSION } from './pure.js';
 
 let user, profile;
 let salons = [];
@@ -20,6 +20,8 @@ let inviteTargetSalonId = null;
 init();
 
 async function init() {
+  document.getElementById('appVersion').textContent = APP_VERSION;
+
   const auth = await requireRole(['platform_admin']);
   user = auth.user;
   profile = auth.profile;

@@ -15,6 +15,7 @@
         <div class="brand">
           <span class="brand-mark">F</span>
           Fluss · <span id="salonName"></span>
+          <span id="appVersion" class="text-sm text-muted" style="margin-left:6px;"></span>
         </div>
         <button id="logoutBtn" class="btn btn-ghost btn-sm">Salir</button>
       </div>
@@ -79,7 +80,15 @@
 
       <!-- Vista Historial -->
       <div id="historyView" class="hidden mt-4">
-        <div id="myHistoryList"></div>
+        <div class="card" style="display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:10px;">
+          <div class="field" style="margin:0;">
+            <label>Resumen de un mes</label>
+            <input class="input" type="month" id="historyMonthInput" />
+          </div>
+          <button id="historyMonthClearBtn" class="btn btn-ghost btn-sm hidden">Ver todos los períodos</button>
+        </div>
+        <div id="historyMonthSummary" class="card mt-4 hidden"></div>
+        <div id="myHistoryList" class="mt-4"></div>
         <div id="emptyMyHistory" class="empty-state hidden">Todavía no tenés pedidos de períodos anteriores.</div>
       </div>
     </main>

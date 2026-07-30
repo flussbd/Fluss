@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 import {
   listenCompletedOrders,
+  getCompletedOrdersInMonth,
   getOrderDetail,
   getOrderSubmittedUserIds,
   setItemReceivedQuantity,
@@ -17,20 +18,154 @@ import {
   consolidateByProduct,
   consolidateByUser,
 } from './db.js';
-import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod, formatDateTime } from './pure.js';
+import { formatPrice, escapeHtml, receiptDiffClass, formatPeriod, formatDateTime, lineCost } from './pure.js';
 import { buildHistStatEl } from './ui.js';
 import { state } from './admin-local-state.js';
 import { downloadOrderTxt, downloadOrderXlsx, openProviderExportModal } from './admin-local-export.js';
 
 let unsubHistory = null;
 let historyLimit = 10;
+// Mientras haya un mes elegido en el filtro, la lista de "Períodos
+// archivados" muestra SOLO los de ese mes (ver renderMonthSummary) — el
+// listener en vivo de más abajo sigue corriendo en segundo plano, pero no
+// pisa esa vista con la paginación normal (ver el guard en subscribeHistory).
+let activeMonthFilter = null; // 'YYYY-MM' o null
 
 // Paginado: solo se leen los últimos `historyLimit` períodos (no todo el
 // historial completo cada vez que se abre el panel). "Cargar más" agranda
 // el límite y vuelve a suscribirse.
 export function subscribeHistory() {
   if (unsubHistory) unsubHistory();
-  unsubHistory = listenCompletedOrders(state.profile.salonId, renderHistory, historyLimit);
+  unsubHistory = listenCompletedOrders(
+    state.profile.salonId,
+    (orders) => {
+      if (activeMonthFilter) return;
+      renderHistory(orders);
+    },
+    historyLimit
+  );
+}
+
+/** Wire del selector "Resumen de un mes" del panel Historial — llamar una vez desde admin-local.js. */
+export function setupHistoryMonthFilter() {
+  const input = document.getElementById('historyMonthInput');
+  const clearBtn = document.getElementById('historyMonthClearBtn');
+  if (!input) return;
+  input.addEventListener('change', () => {
+    activeMonthFilter = input.value || null;
+    if (activeMonthFilter) {
+      clearBtn.classList.remove('hidden');
+      renderMonthSummary(activeMonthFilter);
+    } else {
+      clearBtn.classList.add('hidden');
+      document.getElementById('historyMonthSummary').classList.add('hidden');
+      subscribeHistory();
+    }
+  });
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    activeMonthFilter = null;
+    clearBtn.classList.add('hidden');
+    document.getElementById('historyMonthSummary').classList.add('hidden');
+    subscribeHistory();
+  });
+}
+
+/**
+ * Resumen de UN mes calendario: trae todos los períodos cerrados ese mes
+ * (getCompletedOrdersInMonth, sin el límite de paginación normal), muestra
+ * el total general + desglose por proveedor arriba de todo, y abajo la
+ * misma lista expandible de períodos que siempre tuvo el Historial, pero
+ * acotada a ese mes.
+ */
+async function renderMonthSummary(monthValue) {
+  const summaryEl = document.getElementById('historyMonthSummary');
+  const listEl = document.getElementById('historyList');
+  summaryEl.classList.remove('hidden');
+  summaryEl.innerHTML = '<p class="text-sm text-muted">Cargando resumen del mes…</p>';
+  listEl.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
+
+  const [year, month] = monthValue.split('-').map(Number);
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('es', { month: 'long', year: 'numeric' });
+
+  try {
+    const orders = await getCompletedOrdersInMonth(state.profile.salonId, year, month);
+    if (orders.length === 0) {
+      summaryEl.innerHTML = `<p class="text-sm text-muted">No hay períodos cerrados en ${escapeHtml(monthLabel)}.</p>`;
+      listEl.innerHTML = '<div class="empty-state">Ningún período archivado ese mes.</div>';
+      return;
+    }
+
+    // Solo cuenta lo que cada persona efectivamente cerró (mismo criterio
+    // que el resto del Historial: líneas sueltas de quien nunca envió su
+    // propio pedido no se consideran "pedido real").
+    const productById = new Map(state.products.map((p) => [p.id, p]));
+    const byProvider = new Map();
+    let grandTotal = 0;
+    let anyPriceKnown = false;
+
+    for (const o of orders) {
+      const [{ items: rawItems }, submittedUserIds] = await Promise.all([
+        getOrderDetail(state.profile.salonId, o.id),
+        getOrderSubmittedUserIds(state.profile.salonId, o.id),
+      ]);
+      const submittedSet = new Set(submittedUserIds);
+      for (const item of rawItems) {
+        if (!submittedSet.has(item.userId)) continue;
+        const product = productById.get(item.productId);
+        const cost = lineCost(item, product);
+        if (cost === null) continue;
+        anyPriceKnown = true;
+        const providerName = product?.supplierName || 'Sin proveedor';
+        byProvider.set(providerName, (byProvider.get(providerName) || 0) + cost);
+        grandTotal += cost;
+      }
+    }
+
+    summaryEl.innerHTML = '';
+    const title = document.createElement('h3');
+    title.style.marginTop = '0';
+    title.textContent = `Resumen de ${monthLabel}`;
+    summaryEl.appendChild(title);
+
+    const countNote = document.createElement('p');
+    countNote.className = 'text-sm text-muted';
+    countNote.textContent = `${orders.length} período${orders.length === 1 ? '' : 's'} cerrado${orders.length === 1 ? '' : 's'} ese mes.`;
+    summaryEl.appendChild(countNote);
+
+    if (!anyPriceKnown) {
+      const note = document.createElement('p');
+      note.className = 'text-sm text-muted';
+      note.textContent = 'Ningún producto de este mes tiene precio cargado (ni actual ni de recepción), así que no se puede calcular un total.';
+      summaryEl.appendChild(note);
+    } else {
+      const totalRow = document.createElement('section');
+      totalRow.className = 'order-total mt-4';
+      totalRow.innerHTML = `<span>Total general del mes</span><span class="order-total-value">${escapeHtml(formatPrice(grandTotal))}</span>`;
+      summaryEl.appendChild(totalRow);
+
+      const providerNames = Array.from(byProvider.keys()).sort((a, b) => byProvider.get(b) - byProvider.get(a));
+      const table = document.createElement('div');
+      table.className = 'mt-4';
+      for (const name of providerNames) {
+        const row = document.createElement('div');
+        row.className = 'list-row';
+        row.innerHTML = `<span>${escapeHtml(name)}</span><span>${escapeHtml(formatPrice(byProvider.get(name)))}</span>`;
+        table.appendChild(row);
+      }
+      summaryEl.appendChild(table);
+    }
+
+    // Reusa el render normal de la lista de períodos (expandible, con sus
+    // propios botones de descarga/recepción), pero acotado a los del mes —
+    // por eso no hace falta el "Cargar más" (orders.length nunca va a
+    // coincidir con historyLimit salvo casualidad).
+    renderHistory(orders);
+  } catch (err) {
+    console.error(err);
+    summaryEl.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el resumen del mes. Revisá la consola (F12).</p>';
+    listEl.innerHTML = '';
+  }
 }
 
 function renderHistory(orders) {

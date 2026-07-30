@@ -15,6 +15,7 @@
         <div class="brand">
           <span class="brand-mark">F</span>
           Fluss · <span id="salonName">Admin</span>
+          <span id="appVersion" class="text-sm text-muted" style="margin-left:6px;"></span>
         </div>
         <nav class="nav-links">
           <button class="nav-link active" data-panel="dashboard">Pedido actual</button>
@@ -108,8 +109,8 @@
               <input class="input" id="productFormat" placeholder="Ej: 60 ml, 1000 ml, 4% (13 vol)" />
             </div>
             <div class="field">
-              <label>Proveedor (opcional)</label>
-              <input class="input" id="productSupplier" />
+              <label>Proveedor</label>
+              <input class="input" id="productSupplier" required />
             </div>
             <div class="field">
               <label>Código interno (opcional)</label>
@@ -169,6 +170,14 @@ Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml;; 3800</pre>
 
       <!-- ================= PANEL: Historial ================= -->
       <section id="panel-history" class="panel hidden">
+        <div class="card" style="display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:10px; margin-bottom:14px;">
+          <div class="field" style="margin:0;">
+            <label>Resumen de un mes</label>
+            <input class="input" type="month" id="historyMonthInput" />
+          </div>
+          <button id="historyMonthClearBtn" class="btn btn-ghost btn-sm hidden">Ver todos los períodos</button>
+        </div>
+        <div id="historyMonthSummary" class="card mt-4 hidden"></div>
         <h2 class="category-title" style="margin-top:0;">Períodos archivados</h2>
         <div id="historyList"></div>
       </section>
@@ -229,8 +238,8 @@ Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml;; 3800</pre>
         <input class="input" id="editProductFormat" />
       </div>
       <div class="field">
-        <label>Proveedor (opcional)</label>
-        <input class="input" id="editProductSupplier" />
+        <label>Proveedor</label>
+        <input class="input" id="editProductSupplier" required />
       </div>
       <div class="field">
         <label>Código interno (opcional)</label>
@@ -251,7 +260,7 @@ Welloxon Perfect 20 vol; Wella; Welloxon Perfect;; 1000 ml;; 3800</pre>
   <div id="providerExportModal" class="modal-overlay no-print" hidden>
     <div class="modal" style="max-width: 420px;">
       <h2>Descargar por proveedor</h2>
-      <p>Elegí qué proveedor querés descargar, o todos en hojas separadas.</p>
+      <p>Elegí qué proveedor querés descargar, o todos (un archivo .xlsx por proveedor, con su nombre).</p>
       <div class="field">
         <label>Proveedor</label>
         <select class="input" id="providerExportSelect"></select>

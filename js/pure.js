@@ -6,6 +6,15 @@
 // admin-local.js y basic.js.
 // ---------------------------------------------------------------------------
 
+/**
+ * Versión de la app, mostrada en el header de cada vista (admin local,
+ * usuario básico, admin plataforma). Sin build step ni package.json que se
+ * lea en runtime (todo corre directo desde HTML plano), así que esto se
+ * actualiza a mano en cada release — no se deriva de git ni de ningún otro
+ * archivo. Bump manual al publicar cambios que valga la pena distinguir.
+ */
+export const APP_VERSION = 'v1.6.0';
+
 /** Compara dos productos por shadeCode (número de tono) y usa el nombre como desempate. */
 export function compareProductsByShade(a, b) {
   // Nombre primero (con números incluidos comparados numéricamente: "5/0"
@@ -87,7 +96,17 @@ export function consolidateByUser(items, products) {
     const product = productById.get(item.productId);
     if (!product) continue;
     const entry = byUser.get(item.userId) || { userId: item.userId, userName: item.userName, items: [] };
-    entry.items.push({ product, quantity: item.quantity, notes: item.notes });
+    // receivedQuantity/receivedUnitPrice: null mientras no se cargó la
+    // recepción de esta línea (pedidos en vivo, o períodos archivados sin
+    // recepción todavía) — lo usa la exportación a Excel para la columna
+    // "Recibido" de la hoja por usuario.
+    entry.items.push({
+      product,
+      quantity: item.quantity,
+      notes: item.notes,
+      receivedQuantity: typeof item.receivedQuantity === 'number' ? item.receivedQuantity : null,
+      receivedUnitPrice: typeof item.receivedUnitPrice === 'number' ? item.receivedUnitPrice : null,
+    });
     byUser.set(item.userId, entry);
   }
   return Array.from(byUser.values())
@@ -99,6 +118,26 @@ export function consolidateByUser(items, products) {
 export function formatPrice(price) {
   if (typeof price !== 'number' || Number.isNaN(price)) return '';
   return price.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0 });
+}
+
+/**
+ * Costo de UNA línea de pedido (persona + producto): usa lo recibido si ya
+ * se cargó (con su precio "congelado" en ese momento), o si no lo pedido al
+ * precio actual del producto — mismo criterio que ya se aplicaba suelto en
+ * el Historial y en la exportación a Excel, acá centralizado para el
+ * resumen mensual (ver getCompletedOrdersInMonth en db.js). `null` si no hay
+ * ningún precio conocido (ni congelado ni actual).
+ */
+export function lineCost(item, product) {
+  const hasReceived = typeof item.receivedQuantity === 'number';
+  const qty = hasReceived ? item.receivedQuantity : item.quantity;
+  const price =
+    hasReceived && typeof item.receivedUnitPrice === 'number'
+      ? item.receivedUnitPrice
+      : typeof product?.price === 'number'
+        ? product.price
+        : null;
+  return price !== null ? qty * price : null;
 }
 
 /** Escapa HTML antes de insertarlo con innerHTML (evita inyección de HTML desde nombres/notas). */

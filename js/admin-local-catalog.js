@@ -35,8 +35,8 @@ function setupProductEditModal() {
     const priceRaw = document.getElementById('editProductPrice').value.trim();
     const price = priceRaw ? Number(priceRaw) : null;
 
-    if (!name || !brand || !categoryId) {
-      alert('Completá al menos nombre, marca y categoría.');
+    if (!name || !brand || !categoryId || !supplierName) {
+      alert('Completá al menos nombre, marca, categoría y proveedor.');
       return;
     }
     if (priceRaw && Number.isNaN(price)) {
@@ -120,7 +120,7 @@ function setupCatalogForms() {
     const productCode = document.getElementById('productCode').value.trim();
     const priceRaw = document.getElementById('productPrice').value.trim();
     const price = priceRaw ? Number(priceRaw) : null;
-    if (!name || !brand || !categoryId) return;
+    if (!name || !brand || !categoryId || !supplierName) return;
     try {
       await addProduct(state.profile.salonId, { name, brand, line, categoryId, shadeCode, format, supplierName, productCode, price });
       e.target.reset();

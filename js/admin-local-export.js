@@ -212,7 +212,10 @@ export function downloadOrderXlsx(
   // Total, Recibido, Diferencia, Costo recibido (índices 7 a 12).
   XLSX.utils.book_append_sheet(wb, finalizeSheet(totalRows, [7, 8, 9, 10, 11, 12]), sanitizeSheetName('Total', usedNames));
 
-  const userHeader = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Precio unitario', 'Total'];
+  // "Recibido" viene de item.receivedQuantity (ver consolidateByUser en
+  // pure.js) — cuánto le llegó a ESA persona puntual de ese producto, no el
+  // total del equipo (eso ya lo trae la hoja "Total" vía receivedByProduct).
+  const userHeader = ['Marca', 'Categoria', 'Linea', 'Producto', 'Tono', 'Formato', 'Cantidad', 'Recibido', 'Precio unitario', 'Total'];
   for (const u of userGroups) {
     const sorted = u.items.slice().sort(
       (a, b) =>
@@ -225,8 +228,9 @@ export function downloadOrderXlsx(
     );
     const rows = [userHeader];
     let totalQty = 0;
+    let totalRecibido = 0;
     let totalCost = 0;
-    for (const { product, quantity } of sorted) {
+    for (const { product, quantity, receivedQuantity } of sorted) {
       const received = receivedByProduct.get(product.id);
       const price = received && typeof received.unitPrice === 'number'
         ? received.unitPrice
@@ -234,7 +238,9 @@ export function downloadOrderXlsx(
           ? product.price
           : null;
       const total = price !== null ? quantity * price : '';
+      const hasReceived = typeof receivedQuantity === 'number';
       totalQty += quantity;
+      if (hasReceived) totalRecibido += receivedQuantity;
       if (typeof total === 'number') totalCost += total;
       rows.push([
         product.brand || '',
@@ -244,13 +250,14 @@ export function downloadOrderXlsx(
         product.shadeCode || '',
         product.format || '',
         quantity,
+        hasReceived ? receivedQuantity : '',
         price !== null ? price : '',
         total,
       ]);
     }
-    rows.push(['', '', '', '', '', 'TOTAL', totalQty, '', totalCost]);
-    // Columnas numéricas de la hoja por usuario: Cantidad, Precio unitario, Total.
-    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6, 7, 8]), sanitizeSheetName(u.userName, usedNames));
+    rows.push(['', '', '', '', '', 'TOTAL', totalQty, totalRecibido, '', totalCost]);
+    // Columnas numéricas de la hoja por usuario: Cantidad, Recibido, Precio unitario, Total.
+    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6, 7, 8, 9]), sanitizeSheetName(u.userName, usedNames));
   }
 
   XLSX.writeFile(wb, `pedido-${o.periodStart}-a-${o.periodEnd}.xlsx`);
@@ -273,10 +280,18 @@ function groupFlatItemsByProvider(groups) {
   return byProvider;
 }
 
+/** Nombre de archivo válido: saca caracteres que Windows/mac no aceptan en un filename. */
+function sanitizeFileNamePart(name) {
+  return String(name || '').replace(/[\\/:*?"<>|]/g, ' ').trim();
+}
+
 /**
- * Genera un .xlsx por proveedor: si `onlyProvider` es null, arma una hoja
- * por cada proveedor (y "Sin proveedor" si aplica); si se pasa un nombre de
- * proveedor puntual, el archivo trae solo esa hoja con lo suyo.
+ * Genera .xlsx por proveedor: un ARCHIVO SEPARADO por cada proveedor (no un
+ * solo libro con varias hojas), con el nombre del proveedor en el nombre del
+ * archivo — así cada uno queda listo para reenviárselo directo a ese
+ * proveedor sin tener que exportar una hoja a mano. Si `onlyProvider` es
+ * null, descarga uno por cada proveedor del pedido; si se pasa un nombre
+ * puntual, descarga solo ese.
  */
 export function downloadOrderXlsxByProvider(
   o = state.order,
@@ -298,15 +313,14 @@ export function downloadOrderXlsxByProvider(
     }
   }
 
-  const wb = XLSX.utils.book_new();
-  const usedNames = new Set();
   for (const providerName of providerNames) {
+    const wb = XLSX.utils.book_new();
     const rows = buildProviderSheetRows(byProvider.get(providerName));
     // Columna numérica: Cantidad (índice 6, 0-based).
-    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6]), sanitizeSheetName(providerName, usedNames));
+    XLSX.utils.book_append_sheet(wb, finalizeSheet(rows, [6]), sanitizeSheetName(providerName, new Set()));
+    const suffix = `-${sanitizeFileNamePart(providerName)}`;
+    XLSX.writeFile(wb, `pedido-por-proveedor${suffix}-${o.periodStart}-a-${o.periodEnd}.xlsx`);
   }
-  const suffix = onlyProvider ? `-${onlyProvider.replace(/[\\/:*?"<>|]/g, ' ').trim()}` : '';
-  XLSX.writeFile(wb, `pedido-por-proveedor${suffix}-${o.periodStart}-a-${o.periodEnd}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +357,7 @@ export function openProviderExportModal(
   // Texto corto a propósito: el <select> nativo corta el texto sin puntos
   // suspensivos si no entra en el ancho de la caja, y no se puede controlar
   // bien con CSS — más seguro achicar el texto que confiar en que entre.
-  allOpt.textContent = 'Todos (una hoja por proveedor)';
+  allOpt.textContent = 'Todos (un archivo por proveedor)';
   select.appendChild(allOpt);
   for (const name of providerNames) {
     const opt = document.createElement('option');

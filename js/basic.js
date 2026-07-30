@@ -6,6 +6,7 @@ import {
   listenCurrentOrder,
   listenOrderItems,
   listenCompletedOrders,
+  getCompletedOrdersInMonth,
   listenMySubmission,
   submitMyOrder,
   unsubmitMyOrder,
@@ -13,7 +14,7 @@ import {
   setMyItem,
   compareProductsByShade,
 } from './db.js';
-import { formatPrice, escapeHtml, formatPeriod, formatDateTime } from './pure.js';
+import { formatPrice, escapeHtml, formatPeriod, formatDateTime, lineCost, APP_VERSION } from './pure.js';
 import { buildHistStatEl } from './ui.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
@@ -61,12 +62,18 @@ let itemsUnsub = null;
 let submissionUnsub = null;
 let historyUnsub = null;
 let historyLimit = 10;
+// Mientras haya un mes elegido en el filtro, "Mi historial" muestra solo los
+// períodos de ese mes (ver renderMonthSummary) — el listener en vivo sigue
+// corriendo en segundo plano pero no pisa esa vista (ver subscribeHistory).
+let activeMonthFilter = null; // 'YYYY-MM' o null
 
 let user, profile;
 
 init();
 
 async function init() {
+  document.getElementById('appVersion').textContent = APP_VERSION;
+
   const auth = await requireRole(['basic']);
   user = auth.user;
   profile = auth.profile;
@@ -113,6 +120,7 @@ async function init() {
   });
 
   subscribeHistory();
+  setupHistoryMonthFilter();
 
   listenCurrentOrder(profile.salonId, (currentOrder) => {
     order = currentOrder;
@@ -264,7 +272,112 @@ function explainSubmitError(err) {
 // "Cargar más" agranda el límite y vuelve a suscribirse.
 function subscribeHistory() {
   if (historyUnsub) historyUnsub();
-  historyUnsub = listenCompletedOrders(profile.salonId, renderMyHistory, historyLimit);
+  historyUnsub = listenCompletedOrders(
+    profile.salonId,
+    (orders) => {
+      if (activeMonthFilter) return;
+      renderMyHistory(orders);
+    },
+    historyLimit
+  );
+}
+
+/** Wire del selector "Resumen de un mes" de Mi historial — se llama una vez desde init(). */
+function setupHistoryMonthFilter() {
+  const input = document.getElementById('historyMonthInput');
+  const clearBtn = document.getElementById('historyMonthClearBtn');
+  if (!input) return;
+  input.addEventListener('change', () => {
+    activeMonthFilter = input.value || null;
+    if (activeMonthFilter) {
+      clearBtn.classList.remove('hidden');
+      renderMonthSummary(activeMonthFilter);
+    } else {
+      clearBtn.classList.add('hidden');
+      document.getElementById('historyMonthSummary').classList.add('hidden');
+      subscribeHistory();
+    }
+  });
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    activeMonthFilter = null;
+    clearBtn.classList.add('hidden');
+    document.getElementById('historyMonthSummary').classList.add('hidden');
+    subscribeHistory();
+  });
+}
+
+/**
+ * Resumen de UN mes calendario para MI propio historial: trae todos los
+ * períodos cerrados ese mes (sin el límite de paginación normal) y muestra
+ * mi total personal arriba, seguido de la misma lista expandible de
+ * períodos de siempre, acotada a ese mes. A diferencia del resumen del
+ * admin, acá no hay desglose por proveedor (el usuario básico no ve
+ * proveedores en ningún otro lado de la app).
+ */
+async function renderMonthSummary(monthValue) {
+  const summaryEl = document.getElementById('historyMonthSummary');
+  summaryEl.classList.remove('hidden');
+  summaryEl.innerHTML = '<p class="text-sm text-muted">Cargando resumen del mes…</p>';
+  myHistoryListEl.innerHTML = '<p class="text-sm text-muted">Cargando…</p>';
+  emptyMyHistoryEl.classList.add('hidden');
+
+  const [year, month] = monthValue.split('-').map(Number);
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('es', { month: 'long', year: 'numeric' });
+
+  try {
+    const orders = await getCompletedOrdersInMonth(profile.salonId, year, month);
+    if (orders.length === 0) {
+      summaryEl.innerHTML = `<p class="text-sm text-muted">No hay períodos cerrados en ${escapeHtml(monthLabel)}.</p>`;
+      renderMyHistory([]);
+      return;
+    }
+
+    const productById = new Map(allProducts.map((p) => [p.id, p]));
+    let myTotal = 0;
+    let anyPriceKnown = false;
+
+    for (const o of orders) {
+      const { items: rawItems } = await getOrderDetail(profile.salonId, o.id);
+      for (const item of rawItems) {
+        if (item.userId !== user.uid) continue;
+        const product = productById.get(item.productId);
+        const cost = lineCost(item, product);
+        if (cost === null) continue;
+        anyPriceKnown = true;
+        myTotal += cost;
+      }
+    }
+
+    summaryEl.innerHTML = '';
+    const title = document.createElement('h3');
+    title.style.marginTop = '0';
+    title.textContent = `Resumen de ${monthLabel}`;
+    summaryEl.appendChild(title);
+
+    const countNote = document.createElement('p');
+    countNote.className = 'text-sm text-muted';
+    countNote.textContent = `${orders.length} período${orders.length === 1 ? '' : 's'} cerrado${orders.length === 1 ? '' : 's'} ese mes.`;
+    summaryEl.appendChild(countNote);
+
+    if (anyPriceKnown) {
+      const totalRow = document.createElement('section');
+      totalRow.className = 'order-total mt-4';
+      totalRow.innerHTML = `<span>Mi total del mes</span><span class="order-total-value">${escapeHtml(formatPrice(myTotal))}</span>`;
+      summaryEl.appendChild(totalRow);
+    } else {
+      const note = document.createElement('p');
+      note.className = 'text-sm text-muted';
+      note.textContent = 'Todavía no hay precios cargados para lo que pediste este mes.';
+      summaryEl.appendChild(note);
+    }
+
+    renderMyHistory(orders);
+  } catch (err) {
+    console.error(err);
+    summaryEl.innerHTML = '<p class="text-sm text-muted">No se pudo cargar el resumen del mes. Probá de nuevo.</p>';
+    myHistoryListEl.innerHTML = '';
+  }
 }
 
 function renderMyHistory(orders) {

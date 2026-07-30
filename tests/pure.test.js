@@ -9,6 +9,7 @@ import {
   formatPeriod,
   formatDateTime,
   suggestNextPeriod,
+  lineCost,
 } from '../js/pure.js';
 
 describe('formatPrice', () => {
@@ -210,5 +211,43 @@ describe('consolidateByUser', () => {
     const result = consolidateByUser(items, products);
     expect(result.map((u) => u.userName)).toEqual(['Ana', 'Bea']);
     expect(result[0].items[0].quantity).toBe(2);
+  });
+
+  it('cada línea trae receivedQuantity/receivedUnitPrice (null si todavía no se cargó)', () => {
+    const items = [
+      { productId: 'p1', userId: 'u1', userName: 'Ana', quantity: 2, notes: '' },
+      { productId: 'p2', userId: 'u1', userName: 'Ana', quantity: 1, notes: '', receivedQuantity: 3, receivedUnitPrice: 500 },
+    ];
+    const result = consolidateByUser(items, products);
+    const [entryP1, entryP2] = result[0].items;
+    expect(entryP1.receivedQuantity).toBeNull();
+    expect(entryP1.receivedUnitPrice).toBeNull();
+    expect(entryP2.receivedQuantity).toBe(3);
+    expect(entryP2.receivedUnitPrice).toBe(500);
+  });
+});
+
+describe('lineCost', () => {
+  const product = { price: 1000 };
+
+  it('usa lo recibido y su precio congelado si ya se cargó la recepción', () => {
+    const item = { quantity: 5, receivedQuantity: 3, receivedUnitPrice: 900 };
+    expect(lineCost(item, product)).toBe(2700);
+  });
+
+  it('si no hay recepción cargada, usa lo pedido al precio actual del producto', () => {
+    const item = { quantity: 5 };
+    expect(lineCost(item, product)).toBe(5000);
+  });
+
+  it('recibido pero sin precio congelado: usa el precio actual del producto', () => {
+    const item = { quantity: 5, receivedQuantity: 3 };
+    expect(lineCost(item, product)).toBe(3000);
+  });
+
+  it('null si no hay ningún precio conocido', () => {
+    const item = { quantity: 5 };
+    expect(lineCost(item, {})).toBeNull();
+    expect(lineCost(item, null)).toBeNull();
   });
 });

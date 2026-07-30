@@ -21,7 +21,8 @@ import { setupCatalog, renderCategoryOptions, renderProductList } from './admin-
 import { setupTeam, renderInviteList, renderUserList } from './admin-local-team.js';
 import { setupProviderExportModal } from './admin-local-export.js';
 import { setupDashboard, renderDashboard, maybeAutoCloseDraft } from './admin-local-dashboard.js';
-import { subscribeHistory } from './admin-local-history.js';
+import { subscribeHistory, setupHistoryMonthFilter } from './admin-local-history.js';
+import { APP_VERSION } from './pure.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
 
@@ -32,6 +33,8 @@ let unsubSubmissions = null;
 init();
 
 async function init() {
+  document.getElementById('appVersion').textContent = APP_VERSION;
+
   const auth = await requireRole(['local_admin']);
   state.user = auth.user;
   state.profile = auth.profile;
@@ -46,6 +49,7 @@ async function init() {
   setupCatalog();
   setupProviderExportModal();
   setupTeam();
+  setupHistoryMonthFilter();
 
   const salonSnap = await getDoc(doc(db, 'salons', state.profile.salonId));
   if (salonSnap.exists()) document.getElementById('salonName').textContent = salonSnap.data().name;

@@ -342,7 +342,14 @@ function renderMyHistory(orders) {
         }
 
         // Total del período: lo que efectivamente me llegó a mí (no lo
-        // pedido — eso ya lo muestra la columna "Pedido" de cada línea).
+        // pedido — eso ya lo muestra la columna "Pedido" de cada línea). Va
+        // arriba de la lista (no al final) para no tener que scrollear si
+        // pedí muchas cosas — arranca oculto y se completa después.
+        const totalWrap = document.createElement('section');
+        totalWrap.className = 'order-total mt-4 hidden';
+        totalWrap.innerHTML = `<span>Total</span><span class="order-total-value"></span>`;
+        detail.appendChild(totalWrap);
+
         let myPeriodTotalLlegado = 0;
         let myPeriodTotalKnown = false;
 
@@ -395,13 +402,8 @@ function renderMyHistory(orders) {
         }
 
         if (myPeriodTotalKnown) {
-          // <section>, no <div>: ver nota más arriba sobre .consolidated-row-detail.
-          const totalWrap = document.createElement('section');
-          totalWrap.className = 'order-total mt-4';
-          totalWrap.innerHTML = `<span>Total</span><span class="order-total-value">${escapeHtml(
-            formatPrice(myPeriodTotalLlegado)
-          )}</span>`;
-          detail.appendChild(totalWrap);
+          totalWrap.classList.remove('hidden');
+          totalWrap.querySelector('.order-total-value').textContent = formatPrice(myPeriodTotalLlegado);
         }
       } catch (err) {
         console.error(err);

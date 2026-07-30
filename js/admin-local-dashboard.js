@@ -214,6 +214,14 @@ function renderByUserView(userGroups) {
     const h3 = document.createElement('h3');
     h3.textContent = userById.get(group.userId)?.name || group.userName;
     wrap.appendChild(h3);
+
+    // Total arriba de la lista — si pidió muchas cosas, no hay que
+    // scrollear para verlo. Arranca oculto y se completa después.
+    const totalRow = document.createElement('div');
+    totalRow.className = 'order-total mt-4 hidden';
+    totalRow.innerHTML = `<span>Total</span><span class="order-total-value"></span>`;
+    wrap.appendChild(totalRow);
+
     const ul = document.createElement('ul');
     let userTotal = 0;
     let anyPriceKnown = false;
@@ -237,10 +245,8 @@ function renderByUserView(userGroups) {
     if (anyPriceKnown) {
       // Es de solo lectura a propósito: acá no se puede tocar la
       // cantidad, eso solo se ajusta desde la vista Consolidado.
-      const totalRow = document.createElement('div');
-      totalRow.className = 'order-total mt-4';
-      totalRow.innerHTML = `<span>Total</span><span class="order-total-value">${escapeHtml(formatPrice(userTotal))}</span>`;
-      wrap.appendChild(totalRow);
+      totalRow.classList.remove('hidden');
+      totalRow.querySelector('.order-total-value').textContent = formatPrice(userTotal);
     }
 
     container.appendChild(wrap);

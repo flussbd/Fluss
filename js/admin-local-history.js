@@ -451,13 +451,39 @@ function renderHistProductView(container, groups, categoryById, userById = new M
 
   // Total pedido (precio × cantidad pedida) y total recibido (precio ×
   // cantidad recibida) de TODO el equipo, sumando todos los proveedores.
-  // Se recalcula cada vez que se guarda una tanda de recepción.
+  // Va ARRIBA de todo (no al final): con muchos proveedores/productos, nadie
+  // quiere scrollear hasta el final solo para ver el total. Arranca oculto
+  // (recién sabemos si hay algún precio conocido después de recorrer todo) y
+  // se recalcula cada vez que se guarda una tanda de recepción.
+  const totalWrap = document.createElement('section');
+  totalWrap.className = 'order-total mt-4 hidden';
+  totalWrap.style.flexDirection = 'column';
+  totalWrap.style.alignItems = 'stretch';
+  totalWrap.style.gap = '6px';
+
+  const pedidoRow = document.createElement('div');
+  const pedidoLabel = document.createElement('span');
+  pedidoLabel.textContent = 'Total pedido';
+  const totalPedidoValueEl = document.createElement('span');
+  totalPedidoValueEl.className = 'order-total-value';
+  pedidoRow.appendChild(pedidoLabel);
+  pedidoRow.appendChild(totalPedidoValueEl);
+
+  const recibidoRow = document.createElement('div');
+  const recibidoLabel = document.createElement('span');
+  recibidoLabel.textContent = 'Total recibido';
+  const totalRecibidoValueEl = document.createElement('span');
+  totalRecibidoValueEl.className = 'order-total-value';
+  recibidoRow.appendChild(recibidoLabel);
+  recibidoRow.appendChild(totalRecibidoValueEl);
+
+  totalWrap.appendChild(pedidoRow);
+  totalWrap.appendChild(recibidoRow);
+  container.appendChild(totalWrap);
+
   const costEntries = [];
   let anyPriceKnown = false;
-  let totalPedidoValueEl = null;
-  let totalRecibidoValueEl = null;
   function recomputeTotals() {
-    if (!totalPedidoValueEl) return;
     let totalPedido = 0;
     let totalRecibido = 0;
     for (const e of costEntries) {
@@ -727,33 +753,7 @@ function renderHistProductView(container, groups, categoryById, userById = new M
   }
 
   if (anyPriceKnown) {
-    // <section>, no <div>: esto se inserta dentro de .consolidated-row-detail,
-    // que le fuerza display:flex a cualquier <div> hijo.
-    const totalWrap = document.createElement('section');
-    totalWrap.className = 'order-total mt-4';
-    totalWrap.style.flexDirection = 'column';
-    totalWrap.style.alignItems = 'stretch';
-    totalWrap.style.gap = '6px';
-
-    const pedidoRow = document.createElement('div');
-    const pedidoLabel = document.createElement('span');
-    pedidoLabel.textContent = 'Total pedido';
-    totalPedidoValueEl = document.createElement('span');
-    totalPedidoValueEl.className = 'order-total-value';
-    pedidoRow.appendChild(pedidoLabel);
-    pedidoRow.appendChild(totalPedidoValueEl);
-
-    const recibidoRow = document.createElement('div');
-    const recibidoLabel = document.createElement('span');
-    recibidoLabel.textContent = 'Total recibido';
-    totalRecibidoValueEl = document.createElement('span');
-    totalRecibidoValueEl.className = 'order-total-value';
-    recibidoRow.appendChild(recibidoLabel);
-    recibidoRow.appendChild(totalRecibidoValueEl);
-
-    totalWrap.appendChild(pedidoRow);
-    totalWrap.appendChild(recibidoRow);
-    container.appendChild(totalWrap);
+    totalWrap.classList.remove('hidden');
     recomputeTotals();
   }
 }
@@ -774,6 +774,16 @@ function renderHistUserView(container, userGroups, categoryById, userById, recei
     const h3 = document.createElement('h3');
     h3.textContent = userById.get(group.userId)?.name || group.userName;
     wrap.appendChild(h3);
+
+    // Total arriba de la lista de productos — si pidió muchas cosas, no hay
+    // que scrollear para verlo. Arranca oculto y se completa después.
+    // <section>, no <div>: conserva el padding/borde de .order-total (un
+    // <div> acá quedaría aplastado por la regla de .consolidated-row-detail).
+    const totalRow = document.createElement('section');
+    totalRow.className = 'order-total mt-4 hidden';
+    totalRow.innerHTML = `<span>Total</span><span class="order-total-value"></span>`;
+    wrap.appendChild(totalRow);
+
     const ul = document.createElement('ul');
     let userTotal = 0;
     let anyPriceKnown = false;
@@ -802,12 +812,8 @@ function renderHistUserView(container, userGroups, categoryById, userById, recei
     wrap.appendChild(ul);
 
     if (anyPriceKnown) {
-      // <section>, no <div>: conserva el padding/borde de .order-total
-      // (un <div> acá quedaría aplastado por la regla de .consolidated-row-detail).
-      const totalRow = document.createElement('section');
-      totalRow.className = 'order-total mt-4';
-      totalRow.innerHTML = `<span>Total</span><span class="order-total-value">${escapeHtml(formatPrice(userTotal))}</span>`;
-      wrap.appendChild(totalRow);
+      totalRow.classList.remove('hidden');
+      totalRow.querySelector('.order-total-value').textContent = formatPrice(userTotal);
     }
 
     container.appendChild(wrap);

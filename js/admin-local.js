@@ -21,7 +21,7 @@ import { setupCatalog, renderCategoryOptions, renderProductList } from './admin-
 import { setupTeam, renderInviteList, renderUserList } from './admin-local-team.js';
 import { setupProviderExportModal } from './admin-local-export.js';
 import { setupDashboard, renderDashboard, maybeAutoCloseDraft } from './admin-local-dashboard.js';
-import { subscribeHistory, setupHistoryMonthFilter } from './admin-local-history.js';
+import { subscribeHistory, setupHistoryMonthFilter, initDefaultHistoryMonth } from './admin-local-history.js';
 import { APP_VERSION } from './pure.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './firebase-init.js';
@@ -60,10 +60,18 @@ async function init() {
     renderDashboard();
   });
 
+  let productsLoadedOnce = false;
   listenAllProducts(state.profile.salonId, (prods) => {
     state.products = prods;
     renderProductList();
     renderDashboard();
+    // Recién con productos cargados tiene sentido calcular el resumen
+    // mensual por defecto (necesita precios/proveedor de cada producto) —
+    // ver initDefaultHistoryMonth.
+    if (!productsLoadedOnce) {
+      productsLoadedOnce = true;
+      initDefaultHistoryMonth();
+    }
   });
 
   listenCurrentOrder(state.profile.salonId, (currentOrder) => {

@@ -176,6 +176,21 @@ export async function getCompletedOrdersInMonth(salonId, year, month) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+/**
+ * El pedido cerrado más reciente (cualquier mes) — se usa para elegir el mes
+ * por defecto del resumen mensual cuando el mes en curso todavía no tiene
+ * ningún período cerrado (ver admin-local-history.js / basic.js). `null` si
+ * el salón todavía no cerró ningún período.
+ */
+export async function getMostRecentCompletedOrder(salonId) {
+  const snap = await getDocs(
+    query(ordersCol(salonId), where('status', '==', 'completed'), orderBy('closedAt', 'desc'), limit(1))
+  );
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
 export function listenUsersOfSalon(salonId, cb) {
   return onSnapshot(query(collection(db, 'users'), where('salonId', '==', salonId)), (snap) =>
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))

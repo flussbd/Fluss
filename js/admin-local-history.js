@@ -10,6 +10,7 @@
 import {
   listenCompletedOrders,
   getCompletedOrdersInMonth,
+  getMostRecentCompletedOrder,
   getOrderDetail,
   getOrderSubmittedUserIds,
   setItemReceivedQuantity,
@@ -46,12 +47,17 @@ export function subscribeHistory() {
   );
 }
 
+// Si la persona ya tocó el selector a mano, no le pisamos la elección con el
+// default automático (ver initDefaultHistoryMonth).
+let userTouchedMonthFilter = false;
+
 /** Wire del selector "Resumen de un mes" del panel Historial — llamar una vez desde admin-local.js. */
 export function setupHistoryMonthFilter() {
   const input = document.getElementById('historyMonthInput');
   const clearBtn = document.getElementById('historyMonthClearBtn');
   if (!input) return;
   input.addEventListener('change', () => {
+    userTouchedMonthFilter = true;
     activeMonthFilter = input.value || null;
     if (activeMonthFilter) {
       clearBtn.classList.remove('hidden');
@@ -63,12 +69,57 @@ export function setupHistoryMonthFilter() {
     }
   });
   clearBtn.addEventListener('click', () => {
+    userTouchedMonthFilter = true;
     input.value = '';
     activeMonthFilter = null;
     clearBtn.classList.add('hidden');
     document.getElementById('historyMonthSummary').classList.add('hidden');
     subscribeHistory();
   });
+}
+
+/**
+ * Precarga el selector con el mes en curso — o, si ese mes todavía no tiene
+ * ningún período cerrado, con el mes del último período cerrado que exista
+ * (para no arrancar con el selector vacío y un resumen sin nada que
+ * mostrar). Si el salón nunca cerró un período, se queda en el mes en
+ * curso tal cual. Se llama desde admin-local.js recién cuando llega el
+ * primer snapshot de productos — antes de eso, calcular el resumen daría
+ * "sin precios cargados" de pura carrera (los productos todavía no están en
+ * `state.products`), no porque realmente falten precios.
+ */
+export function initDefaultHistoryMonth() {
+  if (userTouchedMonthFilter) return;
+  const input = document.getElementById('historyMonthInput');
+  const clearBtn = document.getElementById('historyMonthClearBtn');
+  if (!input) return;
+  selectDefaultMonth(input, clearBtn);
+}
+
+async function selectDefaultMonth(input, clearBtn) {
+  const now = new Date();
+  const currentMonthValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  let defaultValue = currentMonthValue;
+  try {
+    const [year, month] = currentMonthValue.split('-').map(Number);
+    const currentOrders = await getCompletedOrdersInMonth(state.profile.salonId, year, month);
+    if (currentOrders.length === 0) {
+      const recent = await getMostRecentCompletedOrder(state.profile.salonId);
+      const recentDate = recent?.closedAt?.toDate ? recent.closedAt.toDate() : null;
+      if (recentDate) defaultValue = `${recentDate.getFullYear()}-${String(recentDate.getMonth() + 1).padStart(2, '0')}`;
+    }
+  } catch (err) {
+    console.error(err);
+    // si falla, se queda con el mes en curso — no es crítico, la persona
+    // siempre puede elegir el mes a mano.
+  }
+  // Si mientras tanto la persona ya tocó el selector (o cambió de panel y
+  // volvió), no le pisamos la elección.
+  if (input.value) return;
+  input.value = defaultValue;
+  activeMonthFilter = defaultValue;
+  clearBtn.classList.remove('hidden');
+  renderMonthSummary(defaultValue);
 }
 
 /**
